@@ -254,4 +254,11 @@ class semanticscholar extends http_source {
     protected function availability_url(): string {
         return $this->url(self::ENDPOINT, ['query' => 'test', 'limit' => 1, 'fields' => 'paperId']);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function get_brand_color(): string {
+        return '#1857B6';
+    }
 }

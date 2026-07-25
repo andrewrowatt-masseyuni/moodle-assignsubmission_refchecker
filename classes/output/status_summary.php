@@ -107,22 +107,22 @@ class status_summary implements renderable, templatable {
                 [
                     'label' => get_string('dashboard_verified', 'assignsubmission_refchecker'),
                     'count' => (int) $job->verifiedrefs,
-                    'badgeclass' => 'success',
+                    'labelclass' => 'verified',
                 ],
                 [
                     'label' => get_string('dashboard_partial', 'assignsubmission_refchecker'),
                     'count' => (int) $job->partialrefs,
-                    'badgeclass' => 'warning',
+                    'labelclass' => 'partial',
                 ],
                 [
                     'label' => get_string('dashboard_mismatch', 'assignsubmission_refchecker'),
                     'count' => (int) $job->mismatchrefs,
-                    'badgeclass' => 'danger',
+                    'labelclass' => 'mismatch',
                 ],
                 [
                     'label' => get_string('dashboard_notfound', 'assignsubmission_refchecker'),
                     'count' => (int) $job->notfoundrefs,
-                    'badgeclass' => 'secondary',
+                    'labelclass' => 'notfound',
                 ],
             ] : [],
             // Operational detail is never exposed to students.

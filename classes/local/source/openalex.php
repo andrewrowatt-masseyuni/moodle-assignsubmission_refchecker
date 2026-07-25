@@ -207,4 +207,11 @@ class openalex extends http_source {
     protected function availability_url(): string {
         return $this->url(self::ENDPOINT, ['per_page' => 1, 'select' => 'id']);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function get_brand_color(): string {
+        return '#1A1A1A';
+    }
 }

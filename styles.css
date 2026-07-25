@@ -53,9 +53,10 @@
     display: flex;
     flex-direction: column;
     min-width: 5rem;
-    background-color: rgb(from var(--stat-base-color, #000) r g b / 0.05);
+    background-color: rgb(from var(--stat-base-color) r g b / 0.05);
     padding: 0.5em;
     border-radius: 0.5em;
+    border: 2px solid rgb(from var(--stat-base-color) r g b / 0.25);
 }
 
 .assignsubmission_refchecker-statvalue {
@@ -66,24 +67,37 @@
 
 .assignsubmission_refchecker-statlabel {
     font-size: 0.8rem;
-    opacity: 0.75;
 }
 
-.assignsubmission_refchecker-stat-success {
+.assignsubmission_refchecker-stat-verified,
+.assignsubmission_refchecker-summary-pill-verified {
     --stat-base-color: var(--success, #357a32);
-
 }
 
 .assignsubmission_refchecker-statvalue {
     color: var(--stat-base-color);
 }
 
-.assignsubmission_refchecker-stat-warning {
-    --stat-base-color: var(--warning, #a6670a);
+.assignsubmission_refchecker-stat-pill,
+.assignsubmission_refchecker-source-pill,
+.assignsubmission_refchecker-summary-pill {
+    background-color: rgb(from var(--stat-base-color) r g b / 0.05);
+    border: 1px solid rgb(from var(--stat-base-color) r g b / 0.25);
+    color: var(--stat-base-color);
+
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1;
+    padding: 0.25em 0.5em;
+    border-radius: 0.5em;
 }
 
-.assignsubmission_refchecker-stat-danger {
-    --stat-base-color: var(--danger, #ca3120);
+.assignsubmission_refchecker-summary-pill {
+    white-space: nowrap;
+}
+
+.assignsubmission_refchecker-stat-confidence {
+    font-size: 0.7rem;
 }
 
 .assignsubmission_refchecker-temporal {
@@ -130,6 +144,7 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 0.35rem;
+    justify-content: space-between;
 }
 
 .assignsubmission_refchecker-rawref {
@@ -169,7 +184,13 @@
     }
 }
 
+.assignsubmission_refchecker-counts {
+    --stat-base-color: var(--primary, #0d6efd);
+}
+
 .assignsubmission_refchecker-report {
+    --stat-base-color: var(--primary, #0d6efd);
+
     background-color: white;
     padding: 1em;
     border-radius: 0.5em;

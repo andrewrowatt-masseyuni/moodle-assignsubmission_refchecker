@@ -19,6 +19,7 @@ namespace assignsubmission_refchecker\output;
 use assignsubmission_refchecker\local\display_level;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\match_status;
+use assignsubmission_refchecker\local\source\chain;
 use core_text;
 use moodle_url;
 use renderable;
@@ -207,7 +208,7 @@ class report implements renderable, templatable {
                 'matchstatus' => $matchstatus,
                 'matchstatuslabel' => match_status::label($matchstatus),
                 'badgeclass' => match_status::badge_class($matchstatus),
-                'hasconfidence' => $reference->matchconfidence !== null,
+                'hasconfidence' => $reference->matchconfidence !== null && $matchstatus !== match_status::NOTFOUND,
                 'matchconfidence' => (int) $reference->matchconfidence,
                 'isnotfound' => $matchstatus === match_status::NOTFOUND,
                 'foundtitle' => (string) $reference->foundtitle,
@@ -229,7 +230,10 @@ class report implements renderable, templatable {
                 'predatory' => !empty($reference->predatory),
                 'hasissues' => !empty($issues),
                 'issues' => $issues,
+                // The machine name for styling, and the readable one for people to read.
                 'source' => (string) $reference->source,
+                'sourcelabel' => chain::display_name($reference->source),
+                'sourcecolor' => chain::brand_color($reference->source),
                 'scholarurl' => $this->scholar_url((string) $reference->rawref),
                 'scores' => [
                     ['label' => get_string('report_titlescore', 'assignsubmission_refchecker'),

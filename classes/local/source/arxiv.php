@@ -269,4 +269,11 @@ class arxiv extends http_source {
             return false;
         }
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function get_brand_color(): string {
+        return '#AA142D';
+    }
 }

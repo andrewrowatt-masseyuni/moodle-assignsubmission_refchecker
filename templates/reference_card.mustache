@@ -88,12 +88,13 @@
 }}
 <div class="assignsubmission_refchecker-refbody">
     <div class="assignsubmission_refchecker-refheader">
-        <span class="badge badge-pill badge-{{badgeclass}} bg-{{badgeclass}}">{{matchstatuslabel}}</span>
-        {{#hasconfidence}}
-            <span class="text-muted small">{{#str}}report_confidence, assignsubmission_refchecker{{/str}}: {{matchconfidence}}%</span>
-        {{/hasconfidence}}
+        <span class="assignsubmission_refchecker-stat-pill assignsubmission_refchecker-stat-{{matchstatus}}">{{matchstatuslabel}}
+            {{#hasconfidence}}
+                <span class="assignsubmission_refchecker-stat-confidence" aria-label="{{#str}}report_confidence, assignsubmission_refchecker{{/str}}" title="{{#str}}report_confidence, assignsubmission_refchecker{{/str}}">{{matchconfidence}}%</span>
+            {{/hasconfidence}}
+        </span>
         {{#showsource}}
-            <span class="text-muted small">{{#str}}report_source, assignsubmission_refchecker{{/str}}: {{source}}</span>
+            <span class="assignsubmission_refchecker-source-pill assignsubmission_refchecker-source-{{source}}" aria-label="{{#str}}report_source, assignsubmission_refchecker{{/str}}: {{sourcelabel}}" title="{{#str}}report_source, assignsubmission_refchecker{{/str}}: {{sourcelabel}}" style="--stat-base-color: {{sourcecolor}}">{{sourcelabel}}</span>
         {{/showsource}}
     </div>
 

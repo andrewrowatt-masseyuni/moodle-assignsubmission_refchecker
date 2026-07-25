@@ -80,6 +80,82 @@ class chain {
     }
 
     /**
+     * Every source's stored name mapped to the name people read.
+     *
+     * Derived from the source classes rather than repeated here, so each one stays the single
+     * authority on what it is called. Settings menus and the report all read from this.
+     *
+     * @return array<string, string>
+     */
+    public static function display_names(): array {
+        static $names = null;
+
+        if ($names === null) {
+            $names = [];
+            foreach (self::AVAILABLE as $name => $class) {
+                $names[$name] = (new $class())->get_display_name();
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The readable name for a stored source name.
+     *
+     * @param string|null $source As stored against a reference, e.g. "semanticscholar".
+     * @return string The readable form, e.g. "Semantic Scholar". Empty when nothing was stored.
+     */
+    public static function display_name(?string $source): string {
+        $source = trim((string) $source);
+        if ($source === '') {
+            return '';
+        }
+
+        // A source that has since been removed still has results stored against it, so fall back
+        // to whatever was recorded rather than showing a blank.
+        return self::display_names()[$source] ?? $source;
+    }
+
+    /**
+     * Every source's stored brand color.
+     *
+     * Derived from the source classes rather than repeated here, so each one stays the single
+     * authority on what it is called. Settings menus and the report all read from this.
+     *
+     * @return array<string, string>
+     */
+    public static function brand_colors(): array {
+        static $colors = null;
+
+        if ($colors === null) {
+            $colors = [];
+            foreach (self::AVAILABLE as $name => $class) {
+                $colors[$name] = (new $class())->get_brand_color();
+            }
+        }
+
+        return $colors;
+    }
+
+    /**
+     * The brand color for a stored source name.
+     *
+     * @param string|null $source As stored against a reference, e.g. "semanticscholar".
+     * @return string The readable form, e.g. "Semantic Scholar". Empty when nothing was stored.
+     */
+    public static function brand_color(?string $source): string {
+        $source = trim((string) $source);
+        if ($source === '') {
+            return '';
+        }
+
+        // A source that has since been removed still has results stored against it, so fall back
+        // to whatever was recorded rather than showing a blank.
+        return self::brand_colors()[$source] ?? $source;
+    }
+
+    /**
      * Constructor.
      *
      * @param reference_source[] $sources In the order they should be tried.

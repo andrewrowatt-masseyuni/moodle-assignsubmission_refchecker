@@ -272,4 +272,11 @@ class crossref extends http_source {
     protected function availability_url(): string {
         return $this->url(self::ENDPOINT, ['rows' => 1, 'select' => 'DOI']);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function get_brand_color(): string {
+        return '#2A8193';
+    }
 }

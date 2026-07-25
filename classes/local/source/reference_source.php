@@ -44,6 +44,13 @@ interface reference_source {
     public function get_display_name(): string;
 
     /**
+     * The brand color for the source.
+     *
+     * @return string
+     */
+    public function get_brand_color(): string;
+
+    /**
      * Look a reference up.
      *
      * @param array $reference Parsed reference: raw, title, authors, journal, year, doi.

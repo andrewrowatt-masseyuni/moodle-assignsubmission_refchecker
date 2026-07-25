@@ -73,6 +73,9 @@
 }}
 <div class="assignsubmission_refchecker-report" data-region="refchecker-report">
     <h4 class="assignsubmission_refchecker-reportheading">{{heading}}</h4>
+    {{#hassectionheading}}
+        <p class="text-muted small">{{sectionheading}}</p>
+    {{/hassectionheading}}
 
     {{^iscomplete}}
         <p class="assignsubmission_refchecker-statustext">{{statuslabel}}</p>
@@ -81,27 +84,27 @@
     {{#dashboard}}
         <div class="assignsubmission_refchecker-dashboard">
             <div class="assignsubmission_refchecker-stats">
-                <div class="assignsubmission_refchecker-stat">
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-total">
                     <span class="assignsubmission_refchecker-statvalue">{{total}}</span>
                     <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_total, assignsubmission_refchecker{{/str}}</span>
                 </div>
-                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-success">
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-verified">
                     <span class="assignsubmission_refchecker-statvalue">{{verified}}</span>
                     <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_verified, assignsubmission_refchecker{{/str}}</span>
                 </div>
-                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-warning">
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-partial">
                     <span class="assignsubmission_refchecker-statvalue">{{partial}}</span>
                     <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_partial, assignsubmission_refchecker{{/str}}</span>
                 </div>
-                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-danger">
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-mismatch">
                     <span class="assignsubmission_refchecker-statvalue">{{mismatch}}</span>
                     <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_mismatch, assignsubmission_refchecker{{/str}}</span>
                 </div>
-                <div class="assignsubmission_refchecker-stat">
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-notfound">
                     <span class="assignsubmission_refchecker-statvalue">{{notfound}}</span>
                     <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_notfound, assignsubmission_refchecker{{/str}}</span>
                 </div>
-                <div class="assignsubmission_refchecker-stat">
+                <div class="assignsubmission_refchecker-stat  assignsubmission_refchecker-stat-withissues">
                     <span class="assignsubmission_refchecker-statvalue">{{withissues}}</span>
                     <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_withissues, assignsubmission_refchecker{{/str}}</span>
                 </div>
@@ -132,10 +135,6 @@
             {{/hastemporal}}
         </div>
     {{/dashboard}}
-
-    {{#hassectionheading}}
-        <p class="text-muted small">{{sectionheading}}</p>
-    {{/hassectionheading}}
 
     {{#istruncated}}
         <div class="alert alert-info" role="alert">{{truncatednotice}}</div>

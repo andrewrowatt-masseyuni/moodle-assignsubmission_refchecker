@@ -1,0 +1,180 @@
+/* Reference Checker submission plugin. */
+
+/* Status line, as rendered in the submission status table and the grading table. */
+.assignsubmission_refchecker-statusline {
+    align-items: center;
+    display: flex;
+    gap: 0.4rem;
+}
+
+.assignsubmission_refchecker-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.assignsubmission_refchecker-guidance,
+.assignsubmission_refchecker-diagnostics {
+    margin-top: 0.25rem;
+}
+
+/* Checking runs in the background, so the spinner signals "come back later", not "wait here". */
+.assignsubmission_refchecker-spinner {
+    animation: assignsubmission_refchecker-spin 0.9s linear infinite;
+    border: 2px solid rgba(127, 127, 127, 0.35);
+    border-radius: 50%;
+    border-top-color: currentcolor;
+    display: inline-block;
+    height: 0.85em;
+    width: 0.85em;
+}
+
+@keyframes assignsubmission_refchecker-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .assignsubmission_refchecker-spinner {
+        animation: none;
+    }
+}
+
+/* Dashboard. */
+.assignsubmission_refchecker-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.assignsubmission_refchecker-stat {
+    display: flex;
+    flex-direction: column;
+    min-width: 5rem;
+    background-color: rgb(from var(--stat-base-color, #000) r g b / 0.05);
+    padding: 0.5em;
+    border-radius: 0.5em;
+}
+
+.assignsubmission_refchecker-statvalue {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.assignsubmission_refchecker-statlabel {
+    font-size: 0.8rem;
+    opacity: 0.75;
+}
+
+.assignsubmission_refchecker-stat-success {
+    --stat-base-color: var(--success, #357a32);
+
+}
+
+.assignsubmission_refchecker-statvalue {
+    color: var(--stat-base-color);
+}
+
+.assignsubmission_refchecker-stat-warning {
+    --stat-base-color: var(--warning, #a6670a);
+}
+
+.assignsubmission_refchecker-stat-danger {
+    --stat-base-color: var(--danger, #ca3120);
+}
+
+.assignsubmission_refchecker-temporal {
+    display: grid;
+    gap: 0 1rem;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    margin-top: 0.75rem;
+}
+
+.assignsubmission_refchecker-temporal dt {
+    font-weight: 400;
+    opacity: 0.75;
+}
+
+.assignsubmission_refchecker-temporal dd {
+    margin-bottom: 0;
+}
+
+/* Filter bar and reference cards. */
+.assignsubmission_refchecker-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0.75rem 0;
+}
+
+.assignsubmission_refchecker-references {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.assignsubmission_refchecker-reference {
+    border: 1px solid rgba(127, 127, 127, 0.3);
+    border-radius: 0.35rem;
+    margin-bottom: 0.5rem;
+    padding: 0.6rem 0.75rem;
+}
+
+.assignsubmission_refchecker-refheader {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.assignsubmission_refchecker-rawref {
+    border-left: 3px solid rgba(127, 127, 127, 0.4);
+    margin: 0 0 0.5rem;
+    padding-left: 0.6rem;
+}
+
+.assignsubmission_refchecker-refdetails {
+    display: grid;
+    gap: 0 1rem;
+    grid-template-columns: auto 1fr;
+    margin-bottom: 0.5rem;
+}
+
+.assignsubmission_refchecker-refdetails dt {
+    font-weight: 400;
+    opacity: 0.75;
+    white-space: nowrap;
+}
+
+.assignsubmission_refchecker-refdetails dd {
+    margin-bottom: 0;
+    overflow-wrap: anywhere;
+}
+
+.assignsubmission_refchecker-formatted code {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+/* Narrow screens: stack the definition grids rather than squeezing them. */
+@media (max-width: 576px) {
+    .assignsubmission_refchecker-refdetails,
+    .assignsubmission_refchecker-temporal {
+        grid-template-columns: 1fr;
+    }
+}
+
+.assignsubmission_refchecker-report {
+    background-color: white;
+    padding: 1em;
+    border-radius: 0.5em;
+
+    .badge {
+        font-weight: 400;
+    }
+}

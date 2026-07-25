@@ -1,0 +1,79 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template assignsubmission_refchecker/status
+
+    The compact reference checking status shown in the submission status table and the grading
+    table. Rendered once per grading table row, so it stays small.
+
+    Context variables required for this template:
+    * submissionid int - the submission this status belongs to
+    * statuslabel string - the localised status line
+    * inprogress bool - whether checking is still running
+    * iscomplete bool - whether checking finished
+    * isfailed bool - whether checking failed
+    * isnorefs bool - whether no reference list was found
+    * norefsguidance string - advice shown when no reference list was found
+    * showcounts bool - whether to render the count badges
+    * counts array - label, count and badgeclass for each match status
+    * showdiagnostics bool - whether to show the error code (teachers only)
+    * errorcode string - machine readable failure code
+    * errormessage string - human readable failure detail
+
+    Example context (json):
+    {
+        "submissionid": 42,
+        "statuslabel": "15 / 16 (94%) checks complete",
+        "inprogress": true,
+        "iscomplete": false,
+        "isfailed": false,
+        "isnorefs": false,
+        "norefsguidance": "",
+        "showcounts": false,
+        "counts": [],
+        "showdiagnostics": false,
+        "errorcode": "",
+        "errormessage": ""
+    }
+}}
+<div class="assignsubmission_refchecker-status" data-region="refchecker-status" data-submissionid="{{submissionid}}">
+    <div role="status" aria-live="polite" class="assignsubmission_refchecker-statusline">
+        {{#inprogress}}
+            <span class="assignsubmission_refchecker-spinner" aria-hidden="true"></span>
+        {{/inprogress}}
+        <span class="assignsubmission_refchecker-statustext">{{statuslabel}}</span>
+    </div>
+
+    {{#showcounts}}
+        <div class="assignsubmission_refchecker-counts">
+            {{#counts}}
+                <span class="badge badge-{{badgeclass}} bg-{{badgeclass}}">{{count}} {{label}}</span>
+            {{/counts}}
+        </div>
+    {{/showcounts}}
+
+    {{#isnorefs}}
+        <div class="assignsubmission_refchecker-guidance text-muted small">{{norefsguidance}}</div>
+    {{/isnorefs}}
+
+    {{#showdiagnostics}}
+        <div class="assignsubmission_refchecker-diagnostics text-muted small">
+            <code>{{errorcode}}</code>
+            {{#errormessage}}<span>{{errormessage}}</span>{{/errormessage}}
+        </div>
+    {{/showdiagnostics}}
+</div>

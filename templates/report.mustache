@@ -1,0 +1,188 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template assignsubmission_refchecker/report
+
+    The expanded reference check report. Always renders the dashboard; renders the individual
+    reference cards only when the viewer is entitled to see them.
+
+    All values other than the admin authored header text come from external databases, so this
+    template uses HTML escaping variables throughout and never triple-brace ones.
+
+    Context variables required for this template:
+    * heading string - the report heading
+    * iscomplete bool - whether checking finished
+    * statuslabel string - the localised status line
+    * dashboard object - the aggregate counts and temporal statistics
+    * hassectionheading bool - whether the reference list heading is known
+    * sectionheading string - which section of the document was read
+    * istruncated bool - whether the reference list was truncated
+    * truncatednotice string - the truncation notice
+    * showreferences bool - whether the viewer may see individual references
+    * hasreferences bool - whether there are any reference rows to show
+    * references array - the individual reference cards
+    * filters array - the filter bar entries
+    * showdiagnostics bool - whether to show operational detail (teachers only)
+    * errorcode string - machine readable failure code
+    * errormessage string - human readable failure detail
+    * timecompleted string - when checking finished
+    * canrerun bool - whether the viewer may re-run the check
+    * rerunurl string - the re-run form target
+
+    Example context (json):
+    {
+        "heading": "Reference check report",
+        "iscomplete": true,
+        "statuslabel": "Complete",
+        "dashboard": {
+            "total": 16, "verified": 12, "partial": 2, "mismatch": 1, "notfound": 1,
+            "withissues": 3, "retracted": 0, "predatory": 0,
+            "hasretracted": false, "haspredatory": false,
+            "hastemporal": true, "oldestyear": 1998, "newestyear": 2025, "avgyear": 2017,
+            "totalcitations": 4210, "avgcitations": 280, "hascitations": true
+        },
+        "hassectionheading": true,
+        "sectionheading": "References were read from the section headed \"References\".",
+        "istruncated": false,
+        "truncatednotice": "",
+        "showreferences": false,
+        "hasreferences": false,
+        "references": [],
+        "filters": [],
+        "showdiagnostics": false,
+        "errorcode": "",
+        "errormessage": "",
+        "timecompleted": "",
+        "canrerun": false,
+        "rerunurl": ""
+    }
+}}
+<div class="assignsubmission_refchecker-report" data-region="refchecker-report">
+    <h4 class="assignsubmission_refchecker-reportheading">{{heading}}</h4>
+
+    {{^iscomplete}}
+        <p class="assignsubmission_refchecker-statustext">{{statuslabel}}</p>
+    {{/iscomplete}}
+
+    {{#dashboard}}
+        <div class="assignsubmission_refchecker-dashboard">
+            <div class="assignsubmission_refchecker-stats">
+                <div class="assignsubmission_refchecker-stat">
+                    <span class="assignsubmission_refchecker-statvalue">{{total}}</span>
+                    <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_total, assignsubmission_refchecker{{/str}}</span>
+                </div>
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-success">
+                    <span class="assignsubmission_refchecker-statvalue">{{verified}}</span>
+                    <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_verified, assignsubmission_refchecker{{/str}}</span>
+                </div>
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-warning">
+                    <span class="assignsubmission_refchecker-statvalue">{{partial}}</span>
+                    <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_partial, assignsubmission_refchecker{{/str}}</span>
+                </div>
+                <div class="assignsubmission_refchecker-stat assignsubmission_refchecker-stat-danger">
+                    <span class="assignsubmission_refchecker-statvalue">{{mismatch}}</span>
+                    <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_mismatch, assignsubmission_refchecker{{/str}}</span>
+                </div>
+                <div class="assignsubmission_refchecker-stat">
+                    <span class="assignsubmission_refchecker-statvalue">{{notfound}}</span>
+                    <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_notfound, assignsubmission_refchecker{{/str}}</span>
+                </div>
+                <div class="assignsubmission_refchecker-stat">
+                    <span class="assignsubmission_refchecker-statvalue">{{withissues}}</span>
+                    <span class="assignsubmission_refchecker-statlabel">{{#str}}dashboard_withissues, assignsubmission_refchecker{{/str}}</span>
+                </div>
+            </div>
+
+            {{#hasretracted}}
+                <div class="alert alert-danger mt-2" role="alert">
+                    {{retracted}} &mdash; {{#str}}dashboard_retracted, assignsubmission_refchecker{{/str}}
+                </div>
+            {{/hasretracted}}
+
+            {{#haspredatory}}
+                <div class="alert alert-warning mt-2" role="alert">
+                    {{predatory}} &mdash; {{#str}}dashboard_predatory, assignsubmission_refchecker{{/str}}
+                </div>
+            {{/haspredatory}}
+
+            {{#hastemporal}}
+                <dl class="assignsubmission_refchecker-temporal">
+                    <dt>{{#str}}dashboard_oldestyear, assignsubmission_refchecker{{/str}}</dt><dd>{{oldestyear}}</dd>
+                    <dt>{{#str}}dashboard_newestyear, assignsubmission_refchecker{{/str}}</dt><dd>{{newestyear}}</dd>
+                    <dt>{{#str}}dashboard_avgyear, assignsubmission_refchecker{{/str}}</dt><dd>{{avgyear}}</dd>
+                    {{#hascitations}}
+                        <dt>{{#str}}dashboard_totalcitations, assignsubmission_refchecker{{/str}}</dt><dd>{{totalcitations}}</dd>
+                        <dt>{{#str}}dashboard_avgcitations, assignsubmission_refchecker{{/str}}</dt><dd>{{avgcitations}}</dd>
+                    {{/hascitations}}
+                </dl>
+            {{/hastemporal}}
+        </div>
+    {{/dashboard}}
+
+    {{#hassectionheading}}
+        <p class="text-muted small">{{sectionheading}}</p>
+    {{/hassectionheading}}
+
+    {{#istruncated}}
+        <div class="alert alert-info" role="alert">{{truncatednotice}}</div>
+    {{/istruncated}}
+
+    {{#hasreferences}}
+        <div class="assignsubmission_refchecker-filters" data-region="refchecker-filters">
+            {{#filters}}
+                <button type="button"
+                        class="btn btn-sm {{#active}}btn-secondary{{/active}}{{^active}}btn-outline-secondary{{/active}}"
+                        data-action="refchecker-filter"
+                        data-filter="{{key}}"
+                        aria-pressed="{{#active}}true{{/active}}{{^active}}false{{/active}}">
+                    {{label}} ({{count}})
+                </button>
+            {{/filters}}
+        </div>
+
+        <ol class="assignsubmission_refchecker-references" data-region="refchecker-references">
+            {{#references}}
+                <li class="assignsubmission_refchecker-reference"
+                    data-region="refchecker-reference"
+                    data-matchstatus="{{matchstatus}}"
+                    data-hasissues="{{#hasissues}}1{{/hasissues}}{{^hasissues}}0{{/hasissues}}">
+                    {{> assignsubmission_refchecker/reference_card }}
+                </li>
+            {{/references}}
+        </ol>
+    {{/hasreferences}}
+
+    {{#showdiagnostics}}
+        <div class="assignsubmission_refchecker-diagnostics text-muted small">
+            {{#timecompleted}}<div>{{timecompleted}}</div>{{/timecompleted}}
+            {{#errorcode}}<div><code>{{errorcode}}</code> {{errormessage}}</div>{{/errorcode}}
+        </div>
+    {{/showdiagnostics}}
+
+    {{#canrerun}}
+        <form method="post" action="{{rerunurl}}" class="assignsubmission_refchecker-rerun">
+            <button type="submit" class="btn btn-secondary btn-sm">
+                {{#str}}report_rerun, assignsubmission_refchecker{{/str}}
+            </button>
+        </form>
+    {{/canrerun}}
+</div>
+{{#js}}
+require(['assignsubmission_refchecker/reportfilter'], function(Filter) {
+    Filter.init();
+});
+{{/js}}

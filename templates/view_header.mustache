@@ -1,0 +1,69 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template assignsubmission_refchecker/view_header
+
+    Explanatory text shown on the assignment page whenever reference checking is enabled. Rendered
+    for every user, before any submission exists.
+
+    Context variables required for this template:
+    * information string - the site configured or default explanation, as HTML
+    * expectation string - one sentence describing what this viewer will see
+    * hasprivacynotice bool - whether a privacy notice is configured
+    * privacynotice string - the site configured privacy notice, as HTML
+    * isteacher bool - whether to show the teacher only lines
+    * studentlevel string - which display level students on this assignment get
+    * hasfilewarning bool - whether File submissions is disabled on this assignment
+    * filewarning string - the warning shown when File submissions is disabled
+
+    Example context (json):
+    {
+        "information": "<p>Your reference list will be checked automatically.</p>",
+        "expectation": "You will see when checking has finished, but not the detailed results.",
+        "hasprivacynotice": false,
+        "privacynotice": "",
+        "isteacher": false,
+        "studentlevel": "",
+        "hasfilewarning": false,
+        "filewarning": ""
+    }
+}}
+<div class="assignsubmission_refchecker-header box py-3">
+    <div class="assignsubmission_refchecker-information">
+        {{{information}}}
+    </div>
+
+    {{#expectation}}
+        <p class="assignsubmission_refchecker-expectation">{{expectation}}</p>
+    {{/expectation}}
+
+    {{#hasprivacynotice}}
+        <div class="assignsubmission_refchecker-privacy text-muted small">
+            {{{privacynotice}}}
+        </div>
+    {{/hasprivacynotice}}
+
+    {{#isteacher}}
+        <p class="assignsubmission_refchecker-teachernote text-muted small mb-0">
+            {{studentlevel}}
+        </p>
+    {{/isteacher}}
+
+    {{#hasfilewarning}}
+        <div class="alert alert-warning mt-2 mb-0" role="alert">{{filewarning}}</div>
+    {{/hasfilewarning}}
+</div>

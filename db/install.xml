@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="mod/assign/submission/refchecker/db" VERSION="20260725" COMMENT="XMLDB file for Moodle mod/assign/submission/refchecker/db"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="assignsubmission_refchecker" COMMENT="One reference checking job per assignment submission">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="assignment" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The assignment instance this job relates to."/>
+        <FIELD NAME="submission" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The submission this job relates to. Carries userid, groupid and attemptnumber already."/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="pending" SEQUENCE="false" COMMENT="notapplicable, pending, extracting, checking, norefs, complete, failed or cancelled."/>
+        <FIELD NAME="generation" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Bumped on every re-trigger. Tasks abort when this no longer matches their custom data."/>
+        <FIELD NAME="requeues" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="How many times the reconcile task has revived this job."/>
+        <FIELD NAME="contenthash" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="sha1 of the sorted source file content hashes, so an unchanged resubmission skips re-checking."/>
+        <FIELD NAME="totalrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Number of references extracted."/>
+        <FIELD NAME="checkedrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Number of references checked so far."/>
+        <FIELD NAME="verifiedrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="partialrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="mismatchrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="notfoundrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="issuerefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="References with at least one reported issue."/>
+        <FIELD NAME="retractedrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="predatoryrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="oldestyear" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="newestyear" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="avgyear" TYPE="number" LENGTH="6" NOTNULL="false" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="totalcitations" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="avgcitations" TYPE="number" LENGTH="10" NOTNULL="false" SEQUENCE="false" DECIMALS="2"/>
+        <FIELD NAME="truncated" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Set when the extracted reference count hit the configured cap."/>
+        <FIELD NAME="sectionheading" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="The bibliography heading that was matched, shown so students can sanity-check what was found."/>
+        <FIELD NAME="errorcode" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="Machine readable failure code. Never shown raw to students."/>
+        <FIELD NAME="errormessage" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Human readable failure detail. Teachers and admins only."/>
+        <FIELD NAME="timequeued" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timestarted" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timecompleted" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="The unique id for this job."/>
+        <KEY NAME="assignment" TYPE="foreign" FIELDS="assignment" REFTABLE="assign" REFFIELDS="id"/>
+        <KEY NAME="submission" TYPE="foreign-unique" FIELDS="submission" REFTABLE="assign_submission" REFFIELDS="id" COMMENT="Exactly one job per submission."/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="assignment-status" UNIQUE="false" FIELDS="assignment, status" COMMENT="Teacher side aggregate queries over an assignment."/>
+        <INDEX NAME="status-timemodified" UNIQUE="false" FIELDS="status, timemodified" COMMENT="Used by the reconcile task to find abandoned jobs."/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="assignsubmission_refchecker_refs" COMMENT="One row per reference extracted from a submission">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="jobid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The checking job this reference belongs to."/>
+        <FIELD NAME="submission" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Denormalised from the job so privacy deletes and backup are a single hop."/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Position in the bibliography."/>
+        <FIELD NAME="rawref" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The reference exactly as the student wrote it."/>
+        <FIELD NAME="sourcefile" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Name of the submitted file this reference came from."/>
+        <FIELD NAME="refhash" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="sha1 of the normalised reference. The cache key."/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="queued" SEQUENCE="false" COMMENT="queued, checked or error. Doubles as the chunking cursor."/>
+        <FIELD NAME="attempts" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Per reference retry counter, capped at 3."/>
+        <FIELD NAME="matchstatus" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="verified, partial, mismatch or notfound."/>
+        <FIELD NAME="matchconfidence" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Overall confidence 0-100."/>
+        <FIELD NAME="titlescore" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="authorscore" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="journalscore" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="crossref, openalex or notfound."/>
+        <FIELD NAME="foundtitle" TYPE="char" LENGTH="1333" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="foundauthors" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of author display names."/>
+        <FIELD NAME="foundyear" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="foundjournal" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="doi" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="url" TYPE="char" LENGTH="1333" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="citations" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="retracted" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="predatory" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="numissues" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="How many issues were reported, so the job counters can be aggregated without parsing JSON."/>
+        <FIELD NAME="issues" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of issue strings. Display only, never queried."/>
+        <FIELD NAME="formatted" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON object of formatted citations: apa, mla, iso690, bibtex. Display only."/>
+        <FIELD NAME="errormessage" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timechecked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="The unique id for this reference."/>
+        <KEY NAME="jobid" TYPE="foreign" FIELDS="jobid" REFTABLE="assignsubmission_refchecker" REFFIELDS="id"/>
+        <KEY NAME="submission" TYPE="foreign" FIELDS="submission" REFTABLE="assign_submission" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="jobid-sortorder" UNIQUE="false" FIELDS="jobid, sortorder" COMMENT="Display order."/>
+        <INDEX NAME="jobid-status" UNIQUE="false" FIELDS="jobid, status" COMMENT="The chunking cursor."/>
+        <INDEX NAME="refhash" UNIQUE="false" FIELDS="refhash"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="assignsubmission_refchecker_cache" COMMENT="Shared cache of lookup results keyed by normalised reference hash. Holds no student authored text.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="refhash" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="sha1 of the normalised reference."/>
+        <FIELD NAME="payload" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="JSON of the found bibliographic record. Never contains the submitted reference text."/>
+        <FIELD NAME="matchstatus" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="notfound" SEQUENCE="false"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="hits" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="How many times this entry has been reused."/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timeexpiry" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="The unique id for this cache entry."/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="refhash" UNIQUE="true" FIELDS="refhash"/>
+        <INDEX NAME="timeexpiry" UNIQUE="false" FIELDS="timeexpiry" COMMENT="Used to purge expired entries."/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

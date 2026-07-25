@@ -1,0 +1,178 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template assignsubmission_refchecker/reference_card
+
+    The contents of a single reference result card. The surrounding list item, and the data
+    attributes the filter reads, belong to the report template that includes this partial.
+
+    Every value here originates from an external database, so this template uses HTML escaping
+    variables throughout and never triple-brace ones.
+
+    Context variables required for this template:
+    * id int - the reference row id
+    * sortorder int - position in the reference list
+    * rawref string - the reference as the student wrote it
+    * matchstatus string - verified, partial, mismatch or notfound
+    * matchstatuslabel string - the localised status label
+    * badgeclass string - Bootstrap contextual suffix for the badge
+    * hasconfidence bool - whether a confidence score is available
+    * matchconfidence int - confidence 0-100
+    * isnotfound bool - whether nothing was matched
+    * hasfoundtitle bool, foundtitle string - the matched work's title
+    * hasfoundauthors bool, foundauthors string - the matched work's authors
+    * foundyear int - the matched work's year
+    * hasfoundjournal bool, foundjournal string - where it was published
+    * hasdoi bool, doi string, doiurl string - the DOI and its resolver link
+    * hascitations bool, citations int - citation count
+    * retracted bool - whether the work has been retracted
+    * predatory bool - whether the journal appears on a predatory list
+    * hasissues bool, issues array - detected issues
+    * hasscores bool, scores array - the per field similarity scores
+    * hasformatted bool, formatted array - the formatted citations
+    * scholarurl string - a Google Scholar search for this reference
+    * showsource bool, source string - which database matched (teachers only)
+    * haserror bool, errormessage string - why this reference could not be checked
+
+    Example context (json):
+    {
+        "id": 1,
+        "sortorder": 0,
+        "rawref": "Vaswani, A. et al. (2017). Attention is all you need. NeurIPS.",
+        "matchstatus": "verified",
+        "matchstatuslabel": "Verified",
+        "badgeclass": "success",
+        "hasconfidence": true,
+        "matchconfidence": 96,
+        "isnotfound": false,
+        "hasfoundtitle": true,
+        "foundtitle": "Attention Is All You Need",
+        "hasfoundauthors": true,
+        "foundauthors": "Ashish Vaswani, Noam Shazeer",
+        "foundyear": 2017,
+        "hasfoundjournal": true,
+        "foundjournal": "Advances in Neural Information Processing Systems",
+        "hasdoi": false,
+        "doi": "",
+        "doiurl": "",
+        "hascitations": true,
+        "citations": 100000,
+        "retracted": false,
+        "predatory": false,
+        "hasissues": false,
+        "issues": [],
+        "hasscores": false,
+        "scores": [],
+        "hasformatted": false,
+        "formatted": [],
+        "scholarurl": "https://scholar.google.com/scholar?q=Attention+is+all+you+need",
+        "showsource": false,
+        "source": "",
+        "haserror": false,
+        "errormessage": ""
+    }
+}}
+<div class="assignsubmission_refchecker-refbody">
+    <div class="assignsubmission_refchecker-refheader">
+        <span class="badge badge-pill badge-{{badgeclass}} bg-{{badgeclass}}">{{matchstatuslabel}}</span>
+        {{#hasconfidence}}
+            <span class="text-muted small">{{#str}}report_confidence, assignsubmission_refchecker{{/str}}: {{matchconfidence}}%</span>
+        {{/hasconfidence}}
+        {{#showsource}}
+            <span class="text-muted small">{{#str}}report_source, assignsubmission_refchecker{{/str}}: {{source}}</span>
+        {{/showsource}}
+    </div>
+
+    <blockquote class="assignsubmission_refchecker-rawref">
+        <span class="sr-only visually-hidden">{{#str}}report_submittedref, assignsubmission_refchecker{{/str}}:</span>
+        {{rawref}}
+    </blockquote>
+
+    {{#retracted}}
+        <div class="alert alert-danger py-1 px-2 small" role="alert">
+            {{#str}}report_retracted_warning, assignsubmission_refchecker{{/str}}
+        </div>
+    {{/retracted}}
+
+    {{#predatory}}
+        <div class="alert alert-warning py-1 px-2 small" role="alert">
+            {{#str}}report_predatory_warning, assignsubmission_refchecker{{/str}}
+        </div>
+    {{/predatory}}
+
+    {{#haserror}}
+        <p class="text-muted small">{{errormessage}}</p>
+    {{/haserror}}
+
+    {{#hasfoundtitle}}
+        <dl class="assignsubmission_refchecker-refdetails">
+            <dt>{{#str}}report_foundtitle, assignsubmission_refchecker{{/str}}</dt>
+            <dd>{{foundtitle}}</dd>
+            {{#hasfoundauthors}}
+                <dt>{{#str}}report_foundauthors, assignsubmission_refchecker{{/str}}</dt>
+                <dd>{{foundauthors}}</dd>
+            {{/hasfoundauthors}}
+            {{#foundyear}}
+                <dt>{{#str}}report_foundyear, assignsubmission_refchecker{{/str}}</dt>
+                <dd>{{foundyear}}</dd>
+            {{/foundyear}}
+            {{#hasfoundjournal}}
+                <dt>{{#str}}report_foundjournal, assignsubmission_refchecker{{/str}}</dt>
+                <dd>{{foundjournal}}</dd>
+            {{/hasfoundjournal}}
+            {{#hasdoi}}
+                <dt>{{#str}}report_doi, assignsubmission_refchecker{{/str}}</dt>
+                <dd><a href="{{doiurl}}" target="_blank" rel="noreferrer noopener">{{doi}}</a></dd>
+            {{/hasdoi}}
+            {{#hascitations}}
+                <dt>{{#str}}report_citations, assignsubmission_refchecker{{/str}}</dt>
+                <dd>{{citations}}</dd>
+            {{/hascitations}}
+        </dl>
+    {{/hasfoundtitle}}
+
+    {{#hasissues}}
+        <div class="assignsubmission_refchecker-issues">
+            <span class="small font-weight-bold fw-bold">{{#str}}report_issues, assignsubmission_refchecker{{/str}}</span>
+            <ul class="small mb-0">
+                {{#issues}}<li>{{.}}</li>{{/issues}}
+            </ul>
+        </div>
+    {{/hasissues}}
+
+    {{#isnotfound}}
+        <p class="mb-0">
+            <a href="{{scholarurl}}" target="_blank" rel="noreferrer noopener">
+                {{#str}}report_scholarlink, assignsubmission_refchecker{{/str}}
+            </a>
+        </p>
+    {{/isnotfound}}
+
+    {{#hasformatted}}
+        <details class="assignsubmission_refchecker-formatted">
+            <summary class="small">{{#str}}report_formatted, assignsubmission_refchecker{{/str}}</summary>
+            <dl>
+                {{#formatted}}
+                    {{#value}}
+                        <dt>{{label}}</dt>
+                        <dd><code>{{value}}</code></dd>
+                    {{/value}}
+                {{/formatted}}
+            </dl>
+        </details>
+    {{/hasformatted}}
+</div>

@@ -24,17 +24,60 @@ use assignsubmission_refchecker\local\matcher;
 use assignsubmission_refchecker\local\predatory;
 
 /**
- * Asks each configured database in turn and returns the first convincing answer.
+ * Asks each configured database in turn and returns the most convincing answer.
  *
- * The chain stops as soon as a source returns a match at or above the title threshold. A weaker
- * match is remembered but not accepted straight away, so that a later source still gets the chance
- * to do better before anything is reported to the student.
+ * The chain stops early only on a match that is both high confidence and consistent with the year
+ * the reference claimed. Anything less is remembered and the remaining sources are still asked, so
+ * a specialist database late in the order can correct a plausible but wrong answer from a general
+ * one. That costs an extra request only when the first hit is doubtful.
  *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class chain {
+    /**
+     * Confidence at or above which a year-consistent match ends the search.
+     *
+     * @var int
+     */
+    public const STOP_EARLY_CONFIDENCE = 90;
+
+    /**
+     * Every source this plugin knows how to search, in the order they are tried.
+     *
+     * The order is the registry's, not the settings multi-select's, so an administrator cannot
+     * accidentally produce a nonsensical sequence. CrossRef first because its coverage best matches
+     * what students cite; the two specialist databases after the two general ones.
+     *
+     * @var array<string, class-string<reference_source>>
+     */
+    protected const AVAILABLE = [
+        'crossref' => crossref::class,
+        'openalex' => openalex::class,
+        'arxiv' => arxiv::class,
+        'dblp' => dblp::class,
+        'semanticscholar' => semanticscholar::class,
+    ];
+
+    /**
+     * The sources enabled when the site has never configured them.
+     *
+     * Semantic Scholar is absent deliberately: without an API key it rate limits within seconds.
+     *
+     * @var string[]
+     */
+    public const DEFAULT_SOURCES = ['crossref', 'openalex', 'arxiv', 'dblp'];
+
+    /**
+     * The names of every source this plugin can search.
+     *
+     * @return string[]
+     */
+    public static function available_sources(): array {
+        return array_keys(self::AVAILABLE);
+    }
+
     /**
      * Constructor.
      *
@@ -55,15 +98,11 @@ class chain {
         $configured = (string) get_config('assignsubmission_refchecker', 'sources');
         $enabled = array_filter(array_map('trim', explode(',', $configured)));
         if (!$enabled) {
-            $enabled = ['crossref', 'openalex'];
+            $enabled = self::DEFAULT_SOURCES;
         }
 
-        // CrossRef first regardless of how the multi-select stored the values: it is the source
-        // whose coverage best matches what students cite.
-        $available = ['crossref' => crossref::class, 'openalex' => openalex::class];
-
         $sources = [];
-        foreach ($available as $name => $class) {
+        foreach (self::AVAILABLE as $name => $class) {
             if (in_array($name, $enabled, true)) {
                 $sources[] = new $class();
             }
@@ -118,24 +157,111 @@ class chain {
 
             $result = $this->evaluate($reference, $record, $source);
 
-            if ($result['matchstatus'] !== match_status::NOTFOUND) {
+            if ($this->is_strong_match($reference, $result)) {
                 return $result;
             }
 
-            // Below the title threshold. Hold on to the best near miss in case nothing better
-            // turns up, but do not report it as a match.
-            if ($bestresult === null || $result['titlescore'] > $bestresult['titlescore']) {
+            if ($this->is_better($result, $bestresult)) {
                 $bestresult = $result;
             }
         }
 
         // Nothing matched, and at least one source never answered: the answer is not trustworthy,
         // so ask to be retried rather than telling the student their reference does not exist.
-        if ($transient !== null && $bestresult === null) {
+        if ($transient !== null && ($bestresult === null || $bestresult['matchstatus'] === match_status::NOTFOUND)) {
             throw $transient;
         }
 
         return $bestresult ?? $this->not_found();
+    }
+
+    /**
+     * Whether a result is good enough to stop looking.
+     *
+     * Confidence alone is not enough. Widely cited papers get re-deposited under fresh identifiers,
+     * so a search can return a convincing match to a copy published years after the one the student
+     * read: CrossRef and OpenAlex both answer "Attention Is All You Need" with 2025 re-deposits,
+     * while arXiv still has the 2017 original. Requiring the year to agree before stopping lets a
+     * later source correct that, at the cost of one extra request only when the first hit is
+     * doubtful.
+     *
+     * @param array $reference
+     * @param array $result
+     * @return bool
+     */
+    protected function is_strong_match(array $reference, array $result): bool {
+        return $result['matchstatus'] === match_status::VERIFIED
+            && $result['confidence'] >= self::STOP_EARLY_CONFIDENCE
+            && $this->year_agrees($reference, $result);
+    }
+
+    /**
+     * Whether a result's year is consistent with what the reference claimed.
+     *
+     * True when the reference states no year, since there is then nothing to disagree with. A
+     * single year of drift is treated as agreement: online-first and preprint-then-proceedings
+     * publication routinely straddle a year boundary.
+     *
+     * @param array $reference
+     * @param array $result
+     * @return bool
+     */
+    protected function year_agrees(array $reference, array $result): bool {
+        $cited = (int) ($reference['year'] ?? 0);
+        $found = (int) ($result['record']['year'] ?? 0);
+
+        if ($cited === 0 || $found === 0) {
+            return true;
+        }
+
+        return abs($cited - $found) <= 1;
+    }
+
+    /**
+     * Whether a new result should displace the best one seen so far.
+     *
+     * Ranked on how well the work was identified first, then on year agreement, and only then on
+     * confidence. Year agreement outranks confidence deliberately: it is what distinguishes the
+     * edition the student actually cited from a later copy of the same work.
+     *
+     * @param array $candidate
+     * @param array|null $incumbent
+     * @return bool
+     */
+    protected function is_better(array $candidate, ?array $incumbent): bool {
+        if ($incumbent === null) {
+            return true;
+        }
+
+        foreach (
+            [
+            [$this->rank($candidate), $this->rank($incumbent)],
+            [(int) $candidate['yearagrees'], (int) $incumbent['yearagrees']],
+            [(int) $candidate['confidence'], (int) $incumbent['confidence']],
+            [(int) $candidate['titlescore'], (int) $incumbent['titlescore']],
+            ] as [$new, $old]
+        ) {
+            if ($new !== $old) {
+                return $new > $old;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * How well a match status identifies the work, highest first.
+     *
+     * @param array $result
+     * @return int
+     */
+    protected function rank(array $result): int {
+        return match ($result['matchstatus']) {
+            match_status::VERIFIED => 3,
+            match_status::PARTIAL => 2,
+            match_status::MISMATCH => 1,
+            default => 0,
+        };
     }
 
     /**
@@ -159,7 +285,7 @@ class chain {
 
         $record['predatory'] = predatory::is_predatory($record['journal'] ?? '');
 
-        return [
+        $result = [
             'matchstatus' => match_status::from_confidence(true, $scores['confidence']),
             'confidence' => $scores['confidence'],
             'titlescore' => $scores['titlescore'],
@@ -168,7 +294,12 @@ class chain {
             'issues' => $scores['issues'],
             'source' => $source->get_name(),
             'record' => $record,
+            'yearagrees' => true,
         ];
+
+        $result['yearagrees'] = $this->year_agrees($reference, $result);
+
+        return $result;
     }
 
     /**
@@ -186,6 +317,7 @@ class chain {
             'issues' => [],
             'source' => null,
             'record' => null,
+            'yearagrees' => false,
         ];
     }
 }

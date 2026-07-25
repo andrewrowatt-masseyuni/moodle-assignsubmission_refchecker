@@ -19,7 +19,9 @@ namespace assignsubmission_refchecker\local\source;
 use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
+use assignsubmission_refchecker\local\rate_limiter;
 use core\http_client;
+use core_text;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\RequestOptions;
 use Throwable;
@@ -75,13 +77,77 @@ abstract class http_source implements reference_source {
      * @throws permanent_exception
      */
     protected function fetch(string $url): ?array {
+        $body = $this->send($url, 'application/json');
+        if ($body === null) {
+            return null;
+        }
+
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            throw new permanent_exception($this->get_name() . ' returned a response that was not JSON');
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * Fetch and parse an XML document.
+     *
+     * arXiv answers in Atom rather than JSON, so it needs its own decoding step. Everything before
+     * the decoding is shared, which is what keeps the two paths from drifting apart on how they
+     * interpret a status code.
+     *
+     * @param string $url
+     * @return \SimpleXMLElement|null Null when the record simply does not exist.
+     * @throws transient_exception
+     * @throws permanent_exception
+     */
+    protected function fetch_xml(string $url): ?\SimpleXMLElement {
+        $body = $this->send($url, 'application/atom+xml, application/xml');
+        if ($body === null) {
+            return null;
+        }
+
+        // Parse errors must not leak into the page as PHP warnings.
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $xml = simplexml_load_string($body);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+
+        if ($xml === false) {
+            throw new permanent_exception($this->get_name() . ' returned a response that was not XML');
+        }
+
+        return $xml;
+    }
+
+    /**
+     * Send a request and return its body, mapping the outcome onto our two failure kinds.
+     *
+     * This is where every request is paced, so no source can bypass the throttle by accident.
+     *
+     * @param string $url
+     * @param string $accept The Accept header to send.
+     * @return string|null The body, or null when the record does not exist.
+     * @throws transient_exception
+     * @throws permanent_exception
+     */
+    protected function send(string $url, string $accept): ?string {
+        rate_limiter::throttle($this->get_name());
+
         $timeout = (int) get_config('assignsubmission_refchecker', 'requesttimeout') ?: 30;
 
         try {
             $response = $this->client()->request('GET', $url, [
                 RequestOptions::HTTP_ERRORS => false,
                 RequestOptions::TIMEOUT => $timeout,
-                RequestOptions::HEADERS => ['Accept' => 'application/json'],
+                RequestOptions::HEADERS => array_merge(
+                    ['Accept' => $accept],
+                    $this->extra_headers(),
+                ),
             ]);
         } catch (GuzzleException | Throwable $e) {
             // Connection refused, DNS failure, timeout: all worth trying again later.
@@ -100,6 +166,8 @@ abstract class http_source implements reference_source {
         }
 
         if ($status >= 500) {
+            // DBLP signals overload with 500 rather than 429, so this path is routine for it
+            // rather than exceptional.
             throw new transient_exception($this->get_name() . ' returned HTTP ' . $status);
         }
 
@@ -107,12 +175,16 @@ abstract class http_source implements reference_source {
             throw new permanent_exception($this->get_name() . ' rejected the request: HTTP ' . $status);
         }
 
-        $decoded = json_decode((string) $response->getBody(), true);
-        if (!is_array($decoded)) {
-            throw new permanent_exception($this->get_name() . ' returned a response that was not JSON');
-        }
+        return (string) $response->getBody();
+    }
 
-        return $decoded;
+    /**
+     * Any headers this source needs beyond the defaults, such as an API key.
+     *
+     * @return array<string, string>
+     */
+    protected function extra_headers(): array {
+        return [];
     }
 
     /**
@@ -148,18 +220,51 @@ abstract class http_source implements reference_source {
     }
 
     /**
-     * Add the polite pool address to a query if one is configured.
+     * Whether this service operates a polite pool keyed on a contact address.
+     *
+     * Only CrossRef and OpenAlex do. Sending mailto to the others achieves nothing and, on a
+     * service that treats unknown parameters as part of the query, could actively distort results.
+     *
+     * @return bool
+     */
+    protected function uses_polite_pool(): bool {
+        return false;
+    }
+
+    /**
+     * Add the polite pool address to a query if this service wants one and it is configured.
      *
      * @param array $query
      * @return array
      */
     protected function with_contact(array $query): array {
         $email = $this->contact_email();
-        if ($email !== '') {
+        if ($this->uses_polite_pool() && $email !== '') {
             $query['mailto'] = $email;
         }
 
         return $query;
+    }
+
+    /**
+     * Whether a title reads like a retraction notice.
+     *
+     * Only CrossRef and OpenAlex publish real retraction data. For the rest this prefix convention
+     * is all there is, so it is a weak signal that must never be read as an all-clear when absent.
+     *
+     * @param string $title
+     * @return bool
+     */
+    protected function looks_retracted(string $title): bool {
+        $title = core_text::strtolower(trim($title));
+
+        foreach (['retracted', 'retraction', 'withdrawn', 'withdrawal'] as $marker) {
+            if (str_starts_with($title, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

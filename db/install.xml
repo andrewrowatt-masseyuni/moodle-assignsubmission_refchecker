@@ -108,5 +108,19 @@
         <INDEX NAME="timeexpiry" UNIQUE="false" FIELDS="timeexpiry" COMMENT="Used to purge expired entries."/>
       </INDEXES>
     </TABLE>
+    <TABLE NAME="assignsubmission_refchecker_rate" COMMENT="Earliest time each external database may next be contacted, shared across cron workers.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false" COMMENT="The source name, e.g. crossref."/>
+        <FIELD NAME="nextallowedms" TYPE="int" LENGTH="20" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Unix time in MILLISECONDS of the next unreserved request slot. Milliseconds because the polite pool intervals are sub-second, and rounding them up to whole seconds would throttle CrossRef and OpenAlex tenfold."/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="The unique id for this reservation row."/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="source" UNIQUE="true" FIELDS="source"/>
+      </INDEXES>
+    </TABLE>
   </TABLES>
 </XMLDB>

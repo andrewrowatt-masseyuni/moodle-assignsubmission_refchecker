@@ -35,6 +35,7 @@ $string['check_notinstalled'] = 'Reference Checker is not installed.';
 $string['check_ok'] = 'Reference checking is ready.';
 $string['check_pdftotextfound'] = 'PDF text extraction is available at {$a}.';
 $string['check_problems'] = 'Reference checking has {$a} configuration problem(s).';
+$string['check_s2nokey'] = 'Semantic Scholar is enabled but no API key is set. Without one it shares a rate limit with every other anonymous caller and will refuse most requests.';
 $string['check_sourceok'] = '{$a} is reachable.';
 $string['check_sources'] = 'Reference Checker';
 $string['check_sources_action'] = 'Reference Checker settings';
@@ -106,11 +107,15 @@ $string['notconfigured'] = 'Reference Checker is not fully configured. Ask your 
 $string['pathtopdftotext'] = 'Path to pdftotext';
 $string['pathtopdftotext_help'] = 'Full path to the pdftotext program, which is part of the poppler-utils package. Without it, PDF submissions cannot be read and only Word and plain text files will be checked.';
 $string['pluginname'] = 'Reference Checker';
+$string['privacy:metadata:arxiv'] = 'Reference details are sent to arXiv to find out whether the work exists and whether the details match.';
+$string['privacy:metadata:arxiv:reference'] = 'The title of a single reference from the reference list.';
 $string['privacy:metadata:cache'] = 'A shared cache of results already looked up, so the same reference is not requested from the external services repeatedly. It stores only a one-way hash of the reference and the bibliographic record that was found, never the text a student wrote.';
 $string['privacy:metadata:cache:payload'] = 'The bibliographic record that was found.';
 $string['privacy:metadata:cache:refhash'] = 'A one-way hash of the normalised reference.';
 $string['privacy:metadata:crossref'] = 'Reference details are sent to CrossRef to find out whether the work exists and whether the details match.';
 $string['privacy:metadata:crossref:reference'] = 'The text of a single reference from the reference list.';
+$string['privacy:metadata:dblp'] = 'Reference details are sent to DBLP to find out whether the work exists and whether the details match.';
+$string['privacy:metadata:dblp:reference'] = 'The title of a single reference from the reference list.';
 $string['privacy:metadata:job'] = 'Information about the reference check carried out on a submission.';
 $string['privacy:metadata:job:sectionheading'] = 'The reference list heading that was found in the submission.';
 $string['privacy:metadata:job:status'] = 'How far the check has progressed.';
@@ -123,9 +128,15 @@ $string['privacy:metadata:refs:foundtitle'] = 'The title of the work that was ma
 $string['privacy:metadata:refs:matchstatus'] = 'Whether the reference was verified, partially matched, mismatched or not found.';
 $string['privacy:metadata:refs:rawref'] = 'A single reference, exactly as it appeared in the submission.';
 $string['privacy:metadata:refs:timechecked'] = 'When this reference was checked.';
+$string['privacy:metadata:semanticscholar'] = 'Reference details are sent to Semantic Scholar to find out whether the work exists and whether the details match.';
+$string['privacy:metadata:semanticscholar:reference'] = 'The title of a single reference from the reference list.';
 $string['privacy:path'] = 'Reference check';
 $string['privacynotice'] = 'Privacy notice';
 $string['privacynotice_help'] = 'Shown to students alongside the explanatory text. Use it to say where reference data is sent and why.';
+$string['rateinterval'] = 'Minimum gap between {$a} requests';
+$string['rateinterval_help'] = 'The shortest time, in milliseconds, allowed between two requests to {$a}. Requests are paced across all background tasks, so this is a site-wide limit rather than a per-task one.
+
+The defaults follow each service\'s own published guidance. Lowering them risks having the site\'s address throttled or blocked; raising them slows checking down.';
 $string['refchecker:viewfullreport'] = 'View the full reference checking report';
 $string['report_apa'] = 'APA';
 $string['report_authorscore'] = 'Authors';
@@ -156,8 +167,16 @@ $string['rerunqueued'] = 'The references will be checked again shortly.';
 $string['retaindays'] = 'Days to keep reference text';
 $string['retaindays_help'] = 'After this many days, the stored copy of each reference is blanked while the result of the check is kept. Set to 0 to keep the reference text indefinitely.';
 $string['sectionheading_found'] = 'References were read from the section headed "{$a}".';
+$string['semanticscholarkey'] = 'Semantic Scholar API key';
+$string['semanticscholarkey_help'] = 'Semantic Scholar shares one rate limit between every caller who does not identify themselves, which in practice means requests are refused within seconds of each other. Semantic Scholar is therefore treated as unavailable until a key is entered here. Keys are free and requested from the Semantic Scholar website.';
 $string['sources'] = 'Databases to search';
-$string['sources_help'] = 'Which databases to look references up in, and in what order. CrossRef covers journal articles, books, chapters, conference proceedings and standards. OpenAlex adds preprints and much conference material that CrossRef indexes patchily.';
+$string['sources_help'] = 'Which databases to look references up in. They are always searched in the order shown, which puts the broadest coverage first.
+
+* **CrossRef** covers journal articles, books, chapters, conference proceedings and standards, and carries retraction data.
+* **OpenAlex** adds preprints and much conference material that CrossRef indexes patchily.
+* **arXiv** covers preprints in computing, physics, mathematics and related fields, and is often the only source holding the version a student actually read.
+* **DBLP** covers computer science conference proceedings thoroughly.
+* **Semantic Scholar** needs an API key to be usable; without one it will refuse most requests.';
 $string['staletimeout'] = 'Abandoned job timeout';
 $string['staletimeout_help'] = 'A check that has made no progress for this long is treated as abandoned. It is retried once, then marked as failed so it does not sit showing progress forever.';
 $string['status_cancelled'] = 'Superseded by a newer submission';

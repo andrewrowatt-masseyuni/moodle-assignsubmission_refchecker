@@ -95,6 +95,26 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
             'privacy:metadata:openalex',
         );
 
+        $collection->add_external_location_link(
+            'arxiv',
+            ['reference' => 'privacy:metadata:arxiv:reference'],
+            'privacy:metadata:arxiv',
+        );
+
+        $collection->add_external_location_link(
+            'dblp',
+            ['reference' => 'privacy:metadata:dblp:reference'],
+            'privacy:metadata:dblp',
+        );
+
+        // Declared whether or not it is switched on: a site that enables it later must not need a
+        // new privacy assessment to do so.
+        $collection->add_external_location_link(
+            'semanticscholar',
+            ['reference' => 'privacy:metadata:semanticscholar:reference'],
+            'privacy:metadata:semanticscholar',
+        );
+
         return $collection;
     }
 

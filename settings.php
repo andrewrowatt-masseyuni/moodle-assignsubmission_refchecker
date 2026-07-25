@@ -64,9 +64,44 @@ $settings->add(new admin_setting_configmultiselect(
     'assignsubmission_refchecker/sources',
     new lang_string('sources', 'assignsubmission_refchecker'),
     new lang_string('sources_help', 'assignsubmission_refchecker'),
-    ['crossref', 'openalex'],
-    ['crossref' => 'CrossRef', 'openalex' => 'OpenAlex']
+    \assignsubmission_refchecker\local\source\chain::DEFAULT_SOURCES,
+    [
+        'crossref' => 'CrossRef',
+        'openalex' => 'OpenAlex',
+        'arxiv' => 'arXiv',
+        'dblp' => 'DBLP',
+        'semanticscholar' => 'Semantic Scholar',
+    ]
 ));
+
+// Semantic Scholar puts every anonymous caller in one shared pool and refuses requests within
+// seconds of each other, so it is off by default and only worth enabling once a key is here.
+$settings->add(new admin_setting_configpasswordunmask(
+    'assignsubmission_refchecker/semanticscholarkey',
+    new lang_string('semanticscholarkey', 'assignsubmission_refchecker'),
+    new lang_string('semanticscholarkey_help', 'assignsubmission_refchecker'),
+    ''
+));
+
+// How closely requests to each database may be spaced. These exist because the services differ by
+// more than an order of magnitude in what they will tolerate.
+foreach (
+    [
+        'crossref' => 'CrossRef',
+        'openalex' => 'OpenAlex',
+        'arxiv' => 'arXiv',
+        'dblp' => 'DBLP',
+        'semanticscholar' => 'Semantic Scholar',
+    ] as $sourcename => $sourcelabel
+) {
+    $settings->add(new admin_setting_configtext(
+        'assignsubmission_refchecker/rateinterval_' . $sourcename,
+        new lang_string('rateinterval', 'assignsubmission_refchecker', $sourcelabel),
+        new lang_string('rateinterval_help', 'assignsubmission_refchecker', $sourcelabel),
+        \assignsubmission_refchecker\local\rate_limiter::default_interval($sourcename),
+        PARAM_INT
+    ));
+}
 
 // Text extraction.
 $settings->add(new admin_setting_configexecutable(

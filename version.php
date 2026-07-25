@@ -26,7 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component    = 'assignsubmission_refchecker';
 $plugin->release      = '1.0';
-$plugin->version      = 2026072502;
+$plugin->version      = 2026072503;
 $plugin->requires     = 2024100700;
 $plugin->supported    = [405, 405];
 $plugin->maturity     = MATURITY_STABLE;

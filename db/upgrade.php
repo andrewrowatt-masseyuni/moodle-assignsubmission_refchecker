@@ -73,5 +73,19 @@ function xmldb_assignsubmission_refchecker_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072502, 'assignsubmission', 'refchecker');
     }
 
+    if ($oldversion < 2026072503) {
+        // Pace requests to each external database. Needed once arXiv, DBLP and Semantic Scholar
+        // are searchable: all three rate limit far more tightly than CrossRef and OpenAlex.
+        $table = new xmldb_table('assignsubmission_refchecker_rate');
+        if (!$dbman->table_exists($table)) {
+            $dbman->install_one_table_from_xmldb_file(
+                $CFG->dirroot . '/mod/assign/submission/refchecker/db/install.xml',
+                'assignsubmission_refchecker_rate',
+            );
+        }
+
+        upgrade_plugin_savepoint(true, 2026072503, 'assignsubmission', 'refchecker');
+    }
+
     return true;
 }

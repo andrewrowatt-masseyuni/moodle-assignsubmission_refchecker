@@ -310,6 +310,7 @@ class reference_parser {
             'journal' => null,
             'year' => self::extract_year($reference),
             'doi' => self::extract_doi($reference),
+            'arxivid' => self::extract_arxiv_id($reference),
         ];
 
         $apa = self::parse_apa($reference);
@@ -341,6 +342,35 @@ class reference_parser {
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $reference, $matches)) {
                 return rtrim($matches[1], '. ');
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract an arXiv identifier.
+     *
+     * Covers the modern form (2301.12345, optionally versioned), the pre-2007 form
+     * (cs.CL/0112017), and both spelled out in an arxiv.org URL. Worth doing: a reference that
+     * names its preprint identifies the work outright, which turns a search into a lookup.
+     *
+     * @param string $reference
+     * @return string|null
+     */
+    public static function extract_arxiv_id(string $reference): ?string {
+        $patterns = [
+            // The modern scheme: arXiv:2301.12345v2, or the same inside an arxiv.org URL.
+            '/ar[Xx]iv[:\s\/]\s*(\d{4}\.\d{4,5}(?:v\d+)?)/i',
+            '#arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)#i',
+            // The pre-2007 scheme, for example arXiv:cs.CL/0112017.
+            '/ar[Xx]iv[:\s\/]\s*([a-z-]+(?:\.[A-Z]{2})?\/\d{7}(?:v\d+)?)/i',
+            '#arxiv\.org/(?:abs|pdf)/([a-z-]+(?:\.[A-Z]{2})?/\d{7}(?:v\d+)?)#i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $reference, $matches)) {
+                return trim($matches[1]);
             }
         }
 

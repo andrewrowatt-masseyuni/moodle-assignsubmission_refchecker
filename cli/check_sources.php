@@ -91,8 +91,25 @@ if (!$chain->get_sources()) {
 }
 
 foreach ($chain->get_sources() as $source) {
-    $available = $source->is_available();
-    cli_writeln(sprintf('  %-12s : %s', $source->get_display_name(), $available ? 'reachable' : 'UNREACHABLE'));
+    $interval = \assignsubmission_refchecker\local\rate_limiter::interval_for($source->get_name());
+
+    if (
+        $source instanceof \assignsubmission_refchecker\local\source\semanticscholar
+            && $source->get_api_key() === ''
+    ) {
+        cli_writeln(sprintf(
+            '  %-17s : NO API KEY (treated as unavailable; it rate limits within seconds without one)',
+            $source->get_display_name()
+        ));
+        continue;
+    }
+
+    cli_writeln(sprintf(
+        '  %-17s : %-12s (min %dms between requests)',
+        $source->get_display_name(),
+        $source->is_available() ? 'reachable' : 'UNREACHABLE',
+        $interval
+    ));
 }
 
 cli_heading('Lookup');

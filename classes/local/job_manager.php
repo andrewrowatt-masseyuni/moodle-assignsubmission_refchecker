@@ -46,6 +46,16 @@ class job_manager {
     public const MAX_REFERENCE_ATTEMPTS = 3;
 
     /**
+     * How long a failed reference waits before being tried again, in seconds.
+     *
+     * Comfortably longer than the circuit breaker's first stand-down, so that a database which
+     * was briefly unwell has actually had the chance to recover before its second attempt.
+     *
+     * @var int
+     */
+    public const RETRY_DELAY = 120;
+
+    /**
      * Per-request cache of jobs, keyed by submission id.
      *
      * The grading table calls view_summary() once per row, so without this a 300 student
@@ -132,14 +142,39 @@ class job_manager {
     public static function next_queued_references(int $jobid, int $limit): array {
         global $DB;
 
-        return $DB->get_records(
+        // A reference put back after a failure waits before being tried again. Without this it
+        // would be picked straight back up by the very next chunk and burn its whole attempt
+        // budget within seconds, which defeats the point of retrying at all: the database that was
+        // unavailable needs time to come back.
+        $cutoff = time() - self::RETRY_DELAY;
+
+        return $DB->get_records_select(
             self::TABLE_REFS,
-            ['jobid' => $jobid, 'status' => job_status::REF_QUEUED],
+            'jobid = :jobid AND status = :status AND timechecked <= :cutoff',
+            ['jobid' => $jobid, 'status' => job_status::REF_QUEUED, 'cutoff' => $cutoff],
             'sortorder ASC, id ASC',
             '*',
             0,
             $limit,
         );
+    }
+
+    /**
+     * How many references are still waiting to be checked, whatever their retry delay.
+     *
+     * Distinguishes "this job is finished" from "everything left is serving out a retry delay",
+     * which look identical from the chunk query alone.
+     *
+     * @param int $jobid
+     * @return int
+     */
+    public static function count_queued_references(int $jobid): int {
+        global $DB;
+
+        return $DB->count_records(self::TABLE_REFS, [
+            'jobid' => $jobid,
+            'status' => job_status::REF_QUEUED,
+        ]);
     }
 
     /**
@@ -394,7 +429,8 @@ class job_manager {
             'status' => $exhausted ? job_status::REF_ERROR : job_status::REF_QUEUED,
             'matchstatus' => $exhausted ? match_status::NOTFOUND : null,
             'errormessage' => core_text::substr($message, 0, 255),
-            'timechecked' => $exhausted ? time() : 0,
+            // Always stamped, including on a requeue: this is what the retry delay measures.
+            'timechecked' => time(),
         ]);
     }
 

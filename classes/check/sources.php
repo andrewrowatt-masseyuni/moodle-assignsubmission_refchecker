@@ -18,6 +18,7 @@ namespace assignsubmission_refchecker\check;
 
 use assignsubmission_refchecker\local\extractor;
 use assignsubmission_refchecker\local\source\chain;
+use assignsubmission_refchecker\local\source\semanticscholar;
 use core\check\check;
 use core\check\result;
 use html_writer;
@@ -89,7 +90,20 @@ class sources extends check {
             $problems[] = get_string('check_nosources', 'assignsubmission_refchecker');
         }
 
+        // Semantic Scholar reports itself unavailable without a key, which on its own would look
+        // like an outage. Name the actual cause instead.
         foreach ($chain->get_sources() as $source) {
+            if ($source instanceof semanticscholar && $source->get_api_key() === '') {
+                $problems[] = get_string('check_s2nokey', 'assignsubmission_refchecker');
+            }
+        }
+
+        foreach ($chain->get_sources() as $source) {
+            if ($source instanceof semanticscholar && $source->get_api_key() === '') {
+                // Already reported above; probing it would only add a rate limit error.
+                continue;
+            }
+
             if ($source->is_available()) {
                 $details[] = get_string(
                     'check_sourceok',

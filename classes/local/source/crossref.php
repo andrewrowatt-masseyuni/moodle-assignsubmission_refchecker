@@ -256,6 +256,15 @@ class crossref extends http_source {
     }
 
     /**
+     * This service operates a polite pool keyed on a contact address.
+     *
+     * @return bool
+     */
+    protected function uses_polite_pool(): bool {
+        return true;
+    }
+
+    /**
      * A cheap request that proves the service is answering.
      *
      * @return string

@@ -21,7 +21,12 @@ use assignsubmission_refchecker\local\exception\rate_limited_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\source\chain;
+use assignsubmission_refchecker\local\circuit_breaker;
+use assignsubmission_refchecker\local\rate_limiter;
+use assignsubmission_refchecker\local\source\arxiv;
 use assignsubmission_refchecker\local\source\crossref;
+use assignsubmission_refchecker\local\source\dblp;
+use assignsubmission_refchecker\local\source\semanticscholar;
 use assignsubmission_refchecker\local\source\openalex;
 use GuzzleHttp\Psr7\Response;
 
@@ -42,6 +47,23 @@ use GuzzleHttp\Psr7\Response;
 final class source_test extends \advanced_testcase {
     /** @var array The request and response history of the mocked client. */
     private array $history = [];
+
+    /**
+     * Switch request pacing off.
+     *
+     * The throttle is exercised by its own tests. Left on, arXiv's three second gap would make the
+     * second request in any test reschedule instead of running.
+     */
+    protected function setUp(): void {
+        parent::setUp();
+
+        $this->resetAfterTest();
+        rate_limiter::reset();
+
+        foreach (chain::available_sources() as $source) {
+            set_config('rateinterval_' . $source, 0, 'assignsubmission_refchecker');
+        }
+    }
 
     /**
      * Install a mocked HTTP client and queue the given responses.
@@ -103,6 +125,63 @@ final class source_test extends \advanced_testcase {
             'doi' => 'https://doi.org/10.5555/attention',
             'cited_by_count' => 42,
             'is_retracted' => $retracted,
+        ]]]);
+    }
+
+    /**
+     * An arXiv Atom feed containing the genuine 2017 paper.
+     *
+     * @return string
+     */
+    private static function arxiv_body(): string {
+        return '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<feed xmlns="http://www.w3.org/2005/Atom" '
+            . 'xmlns:arxiv="http://arxiv.org/schemas/atom">'
+            . '<entry>'
+            . '<id>http://arxiv.org/abs/1706.03762v7</id>'
+            . '<published>2017-06-12T17:57:34Z</published>'
+            . '<title>Attention Is All You Need</title>'
+            . '<summary>The dominant sequence transduction models...</summary>'
+            . '<author><name>Ashish Vaswani</name></author>'
+            . '<author><name>Noam Shazeer</name></author>'
+            . '</entry></feed>';
+    }
+
+    /**
+     * A DBLP search response.
+     *
+     * @return string
+     */
+    private static function dblp_body(): string {
+        return json_encode(['result' => ['hits' => ['hit' => [
+            ['info' => [
+                'title' => 'Attention is all you need',
+                'year' => '2017',
+                'venue' => 'NIPS',
+                'doi' => '10.5555/dblp',
+                'authors' => ['author' => [
+                    ['@pid' => '1', 'text' => 'Ashish Vaswani'],
+                    ['@pid' => '2', 'text' => 'Noam Shazeer'],
+                ]],
+            ]],
+        ]]]]);
+    }
+
+    /**
+     * A Semantic Scholar search response.
+     *
+     * @return string
+     */
+    private static function semanticscholar_body(): string {
+        return json_encode(['data' => [[
+            'paperId' => 'abc',
+            'title' => 'Attention Is All You Need',
+            'authors' => [['name' => 'Ashish Vaswani']],
+            'year' => 2017,
+            'venue' => 'NeurIPS',
+            'externalIds' => ['DOI' => '10.5555/s2'],
+            'citationCount' => 123,
+            'publicationTypes' => ['JournalArticle'],
         ]]]);
     }
 
@@ -387,6 +466,342 @@ final class source_test extends \advanced_testcase {
 
         $this->expectException(rate_limited_exception::class);
         chain::from_config()->check(self::reference());
+    }
+
+    /**
+     * An arXiv Atom feed maps into the shape the matcher expects.
+     */
+    public function test_arxiv_parses_atom(): void {
+        $this->mock_responses([new Response(200, [], self::arxiv_body())]);
+
+        $record = (new arxiv())->check(self::reference());
+
+        $this->assertSame('Attention Is All You Need', $record['title']);
+        $this->assertSame(['Ashish Vaswani', 'Noam Shazeer'], $record['authors']);
+        $this->assertSame(2017, $record['year']);
+        // No citation counts are published by this service, and inventing a zero would mislead.
+        $this->assertNull($record['citations']);
+    }
+
+    /**
+     * A reference carrying an arXiv identifier is looked up rather than searched for.
+     */
+    public function test_arxiv_uses_the_identifier_when_present(): void {
+        $this->mock_responses([new Response(200, [], self::arxiv_body())]);
+
+        (new arxiv())->check(self::reference(['arxivid' => '1706.03762']));
+
+        $this->assertStringContainsString('id_list=1706.03762', $this->requested_uri());
+    }
+
+    /**
+     * Only CrossRef and OpenAlex run polite pools, so only they are sent a contact address.
+     *
+     * @dataProvider polite_pool_provider
+     * @param string $class The source class under test.
+     * @param string $body A valid response body for it.
+     * @param bool $expected Whether mailto should appear in the request.
+     */
+    public function test_polite_pool_is_opt_in(string $class, string $body, bool $expected): void {
+        set_config('contactemail', 'moodle@example.com', 'assignsubmission_refchecker');
+        $this->mock_responses([new Response(200, [], $body)]);
+
+        (new $class())->check(self::reference());
+
+        if ($expected) {
+            $this->assertStringContainsString('mailto=', $this->requested_uri());
+        } else {
+            $this->assertStringNotContainsString('mailto=', $this->requested_uri());
+        }
+    }
+
+    /**
+     * Data provider of sources and whether they take a polite pool address.
+     *
+     * @return array[]
+     */
+    public static function polite_pool_provider(): array {
+        return [
+            'crossref does' => [crossref::class, self::crossref_body(), true],
+            'openalex does' => [openalex::class, self::openalex_body(), true],
+            'arxiv does not' => [arxiv::class, self::arxiv_body(), false],
+            'dblp does not' => [dblp::class, self::dblp_body(), false],
+        ];
+    }
+
+    /**
+     * DBLP author lists arrive in three different shapes, all of which occur in practice.
+     *
+     * @dataProvider dblp_author_provider
+     * @param mixed $authors The authors node as DBLP returned it.
+     * @param int $expected How many names should be recovered.
+     */
+    public function test_dblp_author_shapes($authors, int $expected): void {
+        $this->mock_responses([new Response(200, [], json_encode(['result' => ['hits' => ['hit' => [
+            ['info' => [
+                'title' => 'Attention is all you need',
+                'year' => '2017',
+                'venue' => 'NIPS',
+                'authors' => ['author' => $authors],
+            ]],
+        ]]]]))]);
+
+        $record = (new dblp())->check(self::reference());
+
+        $this->assertCount($expected, $record['authors']);
+    }
+
+    /**
+     * Data provider of DBLP author shapes.
+     *
+     * @return array[]
+     */
+    public static function dblp_author_provider(): array {
+        return [
+            'a single author is not wrapped in an array' => [['@pid' => '1', 'text' => 'Solo Author'], 1],
+            'an author may be a bare string' => ['Plain Name', 1],
+            'the usual list of objects' => [
+                [['@pid' => '1', 'text' => 'One Name'], ['@pid' => '2', 'text' => 'Two Name']],
+                2,
+            ],
+        ];
+    }
+
+    /**
+     * DBLP records the DOI in its link list when the dedicated field is absent.
+     */
+    public function test_dblp_recovers_the_doi_from_the_link(): void {
+        $this->mock_responses([new Response(200, [], json_encode(['result' => ['hits' => ['hit' => [
+            ['info' => [
+                'title' => 'Attention is all you need',
+                'year' => '2017',
+                'ee' => 'https://doi.org/10.5555/FROMEE',
+            ]],
+        ]]]]))]);
+
+        $record = (new dblp())->check(self::reference());
+
+        $this->assertSame('10.5555/fromee', $record['doi']);
+    }
+
+    /**
+     * DBLP signals overload with 500 rather than 429, which must be retried rather than given up on.
+     */
+    public function test_dblp_500_is_transient(): void {
+        $this->mock_responses([new Response(500, [], '<html>error</html>')]);
+
+        $this->expectException(transient_exception::class);
+        (new dblp())->check(self::reference());
+    }
+
+    /**
+     * The Semantic Scholar field list must never ask for isRetracted.
+     *
+     * Regression test. The upstream project requests it, but the field no longer exists and the
+     * API rejects the entire call with "Unrecognized or unsupported fields", so copying its list
+     * verbatim breaks every request.
+     */
+    public function test_semanticscholar_does_not_request_the_removed_field(): void {
+        set_config('semanticscholarkey', 'test-key', 'assignsubmission_refchecker');
+        $this->mock_responses([new Response(200, [], self::semanticscholar_body())]);
+
+        (new semanticscholar())->check(self::reference());
+
+        $uri = $this->requested_uri();
+        $this->assertStringNotContainsString('isRetracted', $uri);
+        $this->assertStringContainsString('publicationTypes', $uri);
+    }
+
+    /**
+     * The API key is sent as a header when one is configured.
+     */
+    public function test_semanticscholar_sends_the_api_key(): void {
+        set_config('semanticscholarkey', 'test-key', 'assignsubmission_refchecker');
+        $this->mock_responses([new Response(200, [], self::semanticscholar_body())]);
+
+        (new semanticscholar())->check(self::reference());
+
+        $this->assertSame('test-key', $this->history[0]['request']->getHeaderLine('x-api-key'));
+    }
+
+    /**
+     * Without a key the source reports itself unavailable rather than failing request by request.
+     */
+    public function test_semanticscholar_is_unavailable_without_a_key(): void {
+        set_config('semanticscholarkey', '', 'assignsubmission_refchecker');
+
+        $this->assertFalse((new semanticscholar())->is_available());
+    }
+
+    /**
+     * A high confidence match whose year disagrees does not end the search.
+     *
+     * The case this exists for: widely cited papers get re-deposited under new identifiers, so
+     * CrossRef and OpenAlex answer "Attention Is All You Need" with 2025 copies while arXiv still
+     * holds the 2017 original the student actually read.
+     */
+    public function test_chain_prefers_the_year_consistent_source(): void {
+        set_config('sources', 'crossref,arxiv', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            // Same title from CrossRef, but a re-deposit published years later.
+            new Response(200, [], json_encode(['message' => ['items' => [[
+                'DOI' => '10.9999/redeposit',
+                'title' => ['Attention Is All You Need'],
+                'author' => [['given' => 'Ashish', 'family' => 'Vaswani']],
+                'issued' => ['date-parts' => [[2025]]],
+            ]]]])),
+            new Response(200, [], self::arxiv_body()),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertCount(2, $this->history, 'Both sources should have been consulted.');
+        $this->assertSame('arxiv', $result['source']);
+        $this->assertSame(2017, $result['record']['year']);
+        $this->assertTrue($result['yearagrees']);
+    }
+
+    /**
+     * A strong match that agrees on the year still stops the search immediately.
+     */
+    public function test_chain_still_stops_on_a_strong_match(): void {
+        set_config('sources', 'crossref,arxiv', 'assignsubmission_refchecker');
+
+        $this->mock_responses([new Response(200, [], self::crossref_body())]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertCount(1, $this->history, 'arXiv should not have been consulted.');
+        $this->assertSame('crossref', $result['source']);
+    }
+
+    /**
+     * The registry, not the settings order, decides which source is asked first.
+     */
+    public function test_chain_order_follows_the_registry(): void {
+        set_config('sources', 'dblp,crossref', 'assignsubmission_refchecker');
+
+        $names = array_map(
+            static fn($source) => $source->get_name(),
+            chain::from_config()->get_sources(),
+        );
+
+        $this->assertSame(['crossref', 'dblp'], $names);
+    }
+
+    /**
+     * A flaky database must not be able to fail a lookup the others answered.
+     *
+     * This is the case seen in production: a reference no database indexes, plus DBLP returning
+     * 500s. Before, that failed the whole task and eventually marked the entire submission as
+     * failed. Three services saying "not in my index" is a real answer.
+     */
+    public function test_one_flaky_source_does_not_fail_the_lookup(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            // CrossRef has nothing matching.
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            // DBLP falls over, as it does under load.
+            new Response(500, [], '<html>error</html>'),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame(match_status::NOTFOUND, $result['matchstatus']);
+        $this->assertTrue($result['degraded']);
+        $this->assertSame(['dblp'], $result['unavailable']);
+    }
+
+    /**
+     * When nothing answered at all, the caller is asked to try again.
+     *
+     * Reporting "not found" here would mean saying a work does not exist on the strength of a
+     * search that never happened.
+     */
+    public function test_no_source_answering_still_throws(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            new Response(503, [], ''),
+            new Response(500, [], ''),
+        ]);
+
+        $this->expectException(transient_exception::class);
+        chain::from_config()->check(self::reference());
+    }
+
+    /**
+     * Finding the work is a true positive however many other databases were down.
+     *
+     * Only a negative is degraded, because only a negative could have been changed by the missing
+     * database. This matters because degraded results are kept out of the shared cache.
+     */
+    public function test_a_positive_match_is_not_degraded(): void {
+        set_config('sources', 'dblp,crossref', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            new Response(500, [], ''),
+            new Response(200, [], self::crossref_body()),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame(match_status::VERIFIED, $result['matchstatus']);
+        $this->assertFalse($result['degraded']);
+        $this->assertSame(['dblp'], $result['unavailable']);
+    }
+
+    /**
+     * A source stood down by the circuit breaker is skipped rather than asked.
+     */
+    public function test_a_stood_down_source_is_skipped(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        circuit_breaker::record_failure('dblp');
+        circuit_breaker::record_failure('dblp');
+
+        $this->mock_responses([new Response(200, [], json_encode(['message' => ['items' => []]]))]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        // Only CrossRef was contacted.
+        $this->assertCount(1, $this->history);
+        $this->assertSame(['dblp'], $result['unavailable']);
+        $this->assertTrue($result['degraded']);
+    }
+
+    /**
+     * Repeated failures stand a source down without any extra bookkeeping by the caller.
+     */
+    public function test_failures_feed_the_circuit_breaker(): void {
+        set_config('sources', 'dblp', 'assignsubmission_refchecker');
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $this->mock_responses([new Response(500, [], '')]);
+            try {
+                chain::from_config()->check(self::reference());
+            } catch (transient_exception $e) {
+                $this->assertNotEmpty($e->getMessage());
+            }
+        }
+
+        $this->assertTrue(circuit_breaker::is_open('dblp'));
+    }
+
+    /**
+     * A successful answer clears a source's failure record.
+     */
+    public function test_a_success_clears_the_breaker(): void {
+        set_config('sources', 'crossref', 'assignsubmission_refchecker');
+
+        circuit_breaker::record_failure('crossref');
+
+        $this->mock_responses([new Response(200, [], self::crossref_body())]);
+        chain::from_config()->check(self::reference());
+
+        $this->assertFalse(circuit_breaker::is_open('crossref'));
     }
 
     /**

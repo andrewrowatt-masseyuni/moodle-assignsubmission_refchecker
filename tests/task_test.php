@@ -454,6 +454,130 @@ final class task_test extends \advanced_testcase {
     }
 
     /**
+     * A flaky database no longer fails the whole chunk.
+     *
+     * The behaviour seen in production: a reference no database indexes, plus DBLP returning 500s,
+     * used to fail the task, back off, retry twelve times and eventually mark the entire
+     * submission as failed. It must now leave the task healthy.
+     */
+    public function test_a_flaky_source_does_not_fail_the_task(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            new Response(500, [], '<html>error</html>'),
+        ]);
+
+        // The key assertion is simply that this does not throw.
+        $this->run_task($this->task(check_references::class, $job));
+
+        $this->assertSame(job_status::CHECKING, job_manager::load((int) $this->submission->id)->status);
+    }
+
+    /**
+     * A result reached while a database was down is never written to the shared cache.
+     *
+     * The cache is read by every submission on the site, so caching a "not found" that was reached
+     * with a source missing would teach every later student that a real work does not exist.
+     */
+    public function test_a_degraded_result_is_not_cached(): void {
+        global $DB;
+
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            new Response(500, [], ''),
+        ]);
+        $this->run_task($this->task(check_references::class, $job));
+
+        $this->assertSame(0, $DB->count_records(job_manager::TABLE_CACHE));
+    }
+
+    /**
+     * A reference that could not be resolved cleanly is retried, then settled.
+     *
+     * It must not go round forever, and it must not be picked straight back up within the same
+     * second either, or the whole attempt budget would be spent before the database had any chance
+     * to recover.
+     */
+    public function test_a_degraded_reference_is_retried_then_settled(): void {
+        global $DB;
+
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            new Response(500, [], ''),
+        ]);
+        $this->run_task($this->task(check_references::class, $job));
+
+        $reference = $DB->get_record(job_manager::TABLE_REFS, ['jobid' => $job->id]);
+        $this->assertSame(job_status::REF_QUEUED, $reference->status);
+        $this->assertSame(1, (int) $reference->attempts);
+
+        // Held back rather than retried immediately.
+        $this->assertSame([], job_manager::next_queued_references((int) $job->id, 10));
+
+        // Once the delay has passed it becomes eligible again.
+        $DB->set_field(
+            job_manager::TABLE_REFS,
+            'timechecked',
+            time() - job_manager::RETRY_DELAY - 1,
+            ['id' => $reference->id],
+        );
+        $this->assertCount(1, job_manager::next_queued_references((int) $job->id, 10));
+    }
+
+    /**
+     * A job whose references are all waiting on a retry is not reported as finished.
+     */
+    public function test_waiting_references_do_not_complete_the_job(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            new Response(500, [], ''),
+        ]);
+        $this->run_task($this->task(check_references::class, $job));
+
+        // The reference is now held back, so the next run sees an empty batch.
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([]);
+        $this->run_task($this->task(check_references::class, $job));
+
+        $this->assertSame(
+            job_status::CHECKING,
+            job_manager::load((int) $this->submission->id)->status,
+            'A job with references still queued must not be reported complete.',
+        );
+    }
+
+    /**
      * An unchanged resubmission is not checked again.
      */
     public function test_unchanged_resubmission_is_skipped(): void {

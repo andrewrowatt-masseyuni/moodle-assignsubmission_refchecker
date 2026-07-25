@@ -21,6 +21,7 @@ use assignsubmission_refchecker\local\exception\rate_limited_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\source\chain;
+use assignsubmission_refchecker\local\circuit_breaker;
 use assignsubmission_refchecker\local\rate_limiter;
 use assignsubmission_refchecker\local\source\arxiv;
 use assignsubmission_refchecker\local\source\crossref;
@@ -687,6 +688,120 @@ final class source_test extends \advanced_testcase {
         );
 
         $this->assertSame(['crossref', 'dblp'], $names);
+    }
+
+    /**
+     * A flaky database must not be able to fail a lookup the others answered.
+     *
+     * This is the case seen in production: a reference no database indexes, plus DBLP returning
+     * 500s. Before, that failed the whole task and eventually marked the entire submission as
+     * failed. Three services saying "not in my index" is a real answer.
+     */
+    public function test_one_flaky_source_does_not_fail_the_lookup(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            // CrossRef has nothing matching.
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            // DBLP falls over, as it does under load.
+            new Response(500, [], '<html>error</html>'),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame(match_status::NOTFOUND, $result['matchstatus']);
+        $this->assertTrue($result['degraded']);
+        $this->assertSame(['dblp'], $result['unavailable']);
+    }
+
+    /**
+     * When nothing answered at all, the caller is asked to try again.
+     *
+     * Reporting "not found" here would mean saying a work does not exist on the strength of a
+     * search that never happened.
+     */
+    public function test_no_source_answering_still_throws(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            new Response(503, [], ''),
+            new Response(500, [], ''),
+        ]);
+
+        $this->expectException(transient_exception::class);
+        chain::from_config()->check(self::reference());
+    }
+
+    /**
+     * Finding the work is a true positive however many other databases were down.
+     *
+     * Only a negative is degraded, because only a negative could have been changed by the missing
+     * database. This matters because degraded results are kept out of the shared cache.
+     */
+    public function test_a_positive_match_is_not_degraded(): void {
+        set_config('sources', 'dblp,crossref', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            new Response(500, [], ''),
+            new Response(200, [], self::crossref_body()),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame(match_status::VERIFIED, $result['matchstatus']);
+        $this->assertFalse($result['degraded']);
+        $this->assertSame(['dblp'], $result['unavailable']);
+    }
+
+    /**
+     * A source stood down by the circuit breaker is skipped rather than asked.
+     */
+    public function test_a_stood_down_source_is_skipped(): void {
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        circuit_breaker::record_failure('dblp');
+        circuit_breaker::record_failure('dblp');
+
+        $this->mock_responses([new Response(200, [], json_encode(['message' => ['items' => []]]))]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        // Only CrossRef was contacted.
+        $this->assertCount(1, $this->history);
+        $this->assertSame(['dblp'], $result['unavailable']);
+        $this->assertTrue($result['degraded']);
+    }
+
+    /**
+     * Repeated failures stand a source down without any extra bookkeeping by the caller.
+     */
+    public function test_failures_feed_the_circuit_breaker(): void {
+        set_config('sources', 'dblp', 'assignsubmission_refchecker');
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $this->mock_responses([new Response(500, [], '')]);
+            try {
+                chain::from_config()->check(self::reference());
+            } catch (transient_exception $e) {
+                $this->assertNotEmpty($e->getMessage());
+            }
+        }
+
+        $this->assertTrue(circuit_breaker::is_open('dblp'));
+    }
+
+    /**
+     * A successful answer clears a source's failure record.
+     */
+    public function test_a_success_clears_the_breaker(): void {
+        set_config('sources', 'crossref', 'assignsubmission_refchecker');
+
+        circuit_breaker::record_failure('crossref');
+
+        $this->mock_responses([new Response(200, [], self::crossref_body())]);
+        chain::from_config()->check(self::reference());
+
+        $this->assertFalse(circuit_breaker::is_open('crossref'));
     }
 
     /**

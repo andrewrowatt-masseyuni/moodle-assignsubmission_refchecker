@@ -18,6 +18,7 @@ namespace assignsubmission_refchecker\local\source;
 
 use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
+use assignsubmission_refchecker\local\circuit_breaker;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\matcher;
@@ -132,16 +133,29 @@ class chain {
     public function check(array $reference): array {
         $bestresult = null;
         $transient = null;
+        $answered = 0;
+        $unavailable = [];
 
         foreach ($this->sources as $source) {
+            // A source that has been failing repeatedly is stood down for a few minutes rather
+            // than asked once per reference while it is unwell.
+            if (circuit_breaker::is_open($source->get_name())) {
+                $unavailable[] = $source->get_name();
+                continue;
+            }
+
             try {
                 $record = $source->check($reference);
+                $answered++;
+                circuit_breaker::record_success($source->get_name());
             } catch (rate_limited_exception $e) {
                 // Backpressure is the caller's decision to act on, not something to route around.
                 throw $e;
             } catch (transient_exception $e) {
                 // Remember it, but give the remaining sources a chance first.
                 $transient = $e;
+                $unavailable[] = $source->get_name();
+                circuit_breaker::record_failure($source->get_name());
                 continue;
             } catch (permanent_exception $e) {
                 debugging(
@@ -158,7 +172,7 @@ class chain {
             $result = $this->evaluate($reference, $record, $source);
 
             if ($this->is_strong_match($reference, $result)) {
-                return $result;
+                return $this->finalise($result, $unavailable);
             }
 
             if ($this->is_better($result, $bestresult)) {
@@ -166,13 +180,41 @@ class chain {
             }
         }
 
-        // Nothing matched, and at least one source never answered: the answer is not trustworthy,
-        // so ask to be retried rather than telling the student their reference does not exist.
-        if ($transient !== null && ($bestresult === null || $bestresult['matchstatus'] === match_status::NOTFOUND)) {
-            throw $transient;
+        // Give up only when nothing answered at all. One flaky database must not be able to fail
+        // the whole submission: three services saying "not in my index" is a real answer, and a
+        // fourth being briefly unreachable does not make it untrustworthy enough to abandon.
+        //
+        // Nothing answering is different. Reporting "not found" then would mean saying a work does
+        // not exist on the strength of a search that never happened, so the caller is asked to try
+        // again later instead.
+        if ($answered === 0 && $unavailable !== []) {
+            throw $transient ?? new transient_exception(
+                'No bibliographic database was available: ' . implode(', ', $unavailable)
+            );
         }
 
-        return $bestresult ?? $this->not_found();
+        return $this->finalise($bestresult ?? $this->not_found(), $unavailable);
+    }
+
+    /**
+     * Record whether the search that produced a result was complete.
+     *
+     * Only a negative is ever treated as degraded. Finding the work is a true positive however many
+     * other databases were unreachable at the time, so it is safe to keep and to cache. Failing to
+     * find it while a database was down is a different claim altogether, and one that must not be
+     * written to a cache the whole site reads: a single outage would otherwise teach every later
+     * submission that a real work does not exist.
+     *
+     * @param array $result
+     * @param string[] $unavailable Sources that could not be consulted.
+     * @return array
+     */
+    protected function finalise(array $result, array $unavailable): array {
+        $result['unavailable'] = $unavailable;
+        $result['degraded'] = $unavailable !== []
+            && $result['matchstatus'] === match_status::NOTFOUND;
+
+        return $result;
     }
 
     /**
@@ -318,6 +360,8 @@ class chain {
             'source' => null,
             'record' => null,
             'yearagrees' => false,
+            'degraded' => false,
+            'unavailable' => [],
         ];
     }
 }

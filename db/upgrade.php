@@ -87,5 +87,24 @@ function xmldb_assignsubmission_refchecker_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072503, 'assignsubmission', 'refchecker');
     }
 
+    if ($oldversion < 2026072504) {
+        // Stand a repeatedly failing database down for a while instead of asking it once per
+        // reference while it is unwell. DBLP in particular answers with 500s and empty replies
+        // under load.
+        $table = new xmldb_table('assignsubmission_refchecker_rate');
+
+        $failures = new xmldb_field('failures', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'nextallowedms');
+        if (!$dbman->field_exists($table, $failures)) {
+            $dbman->add_field($table, $failures);
+        }
+
+        $skipuntil = new xmldb_field('skipuntil', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'failures');
+        if (!$dbman->field_exists($table, $skipuntil)) {
+            $dbman->add_field($table, $skipuntil);
+        }
+
+        upgrade_plugin_savepoint(true, 2026072504, 'assignsubmission', 'refchecker');
+    }
+
     return true;
 }

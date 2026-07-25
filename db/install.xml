@@ -113,6 +113,8 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="source" TYPE="char" LENGTH="32" NOTNULL="true" SEQUENCE="false" COMMENT="The source name, e.g. crossref."/>
         <FIELD NAME="nextallowedms" TYPE="int" LENGTH="20" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Unix time in MILLISECONDS of the next unreserved request slot. Milliseconds because the polite pool intervals are sub-second, and rounding them up to whole seconds would throttle CrossRef and OpenAlex tenfold."/>
+        <FIELD NAME="failures" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Consecutive transient failures. Reset by any successful response."/>
+        <FIELD NAME="skipuntil" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Unix time until which this source is stood down after repeated failures."/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
       </FIELDS>
       <KEYS>

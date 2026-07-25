@@ -18,6 +18,7 @@ namespace assignsubmission_refchecker\task;
 
 use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
+use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\reference_parser;
@@ -81,6 +82,17 @@ class check_references extends adhoc_task {
         $references = job_manager::next_queued_references((int) $job->id, $chunksize);
 
         if (!$references) {
+            // An empty batch does not necessarily mean the job is done: references put back after
+            // a failure are held for a while before being retried. Completing here would report a
+            // submission as finished with references still outstanding.
+            $waiting = job_manager::count_queued_references((int) $job->id);
+            if ($waiting > 0) {
+                mtrace('  ' . $waiting . ' reference(s) waiting to be retried.');
+                job_manager::recalculate_counters($job);
+                $this->queue_next(self::class, $job, job_manager::RETRY_DELAY, false);
+                return;
+            }
+
             $job = job_manager::recalculate_counters($job);
             job_manager::set_status($job, job_status::COMPLETE);
             mtrace('  Complete: ' . $job->checkedrefs . ' of ' . $job->totalrefs . ' checked.');
@@ -118,9 +130,10 @@ class check_references extends adhoc_task {
     /**
      * Check a single reference and record the outcome.
      *
-     * A transient failure is allowed to propagate so the whole task is retried with a backoff. A
-     * permanent one is recorded against the reference and stepped over, because retrying will not
-     * change the answer and one bad reference must not hold up the rest of the submission.
+     * No failure here is allowed to bring the task down. One reference that cannot be resolved,
+     * for whatever reason, must not stall the ones queued behind it, and a database being briefly
+     * unwell must not be able to mark a whole submission as failed. Everything is instead recorded
+     * against the reference itself, where the attempt budget bounds how long it can go on.
      *
      * @param chain $chain
      * @param stdClass $reference
@@ -137,9 +150,41 @@ class check_references extends adhoc_task {
         } catch (permanent_exception $e) {
             job_manager::record_reference_failure($reference, $e->getMessage());
             return;
+        } catch (transient_exception $e) {
+            // Every database was unreachable, so nothing was actually searched. Put the reference
+            // back in the queue rather than throwing: failing the task would stall the references
+            // behind it too, and the attempt budget already stops this going on forever.
+            job_manager::record_reference_failure($reference, $e->getMessage());
+            return;
+        }
+
+        if (!empty($result['degraded'])) {
+            // Not found, but at least one database could not be consulted. Give the missing one
+            // another chance on a later run before accepting the answer, and never write it to the
+            // shared cache in the meantime.
+            if ((int) $reference->attempts + 1 < job_manager::MAX_REFERENCE_ATTEMPTS) {
+                job_manager::record_reference_failure($reference, $this->degraded_message($result));
+                return;
+            }
+
+            // Out of attempts. Record what the databases that did answer told us, but keep it out
+            // of the cache: this answer is weaker than a clean one and must not be shared.
+            job_manager::record_result($reference, $result);
+            return;
         }
 
         job_manager::record_result($reference, $result);
         job_manager::cache_put($reference->refhash, $result);
+    }
+
+    /**
+     * Describe which databases were missing from a search.
+     *
+     * @param array $result
+     * @return string
+     */
+    protected function degraded_message(array $result): string {
+        return 'Not found, but these were unavailable: '
+            . implode(', ', (array) ($result['unavailable'] ?? []));
     }
 }

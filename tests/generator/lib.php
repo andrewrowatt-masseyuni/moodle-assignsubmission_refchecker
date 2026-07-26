@@ -17,6 +17,7 @@
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\match_status;
+use assignsubmission_refchecker\local\text_submission;
 
 /**
  * Test data generator for Reference Checker.
@@ -82,6 +83,39 @@ class assignsubmission_refchecker_generator extends component_generator_base {
         job_manager::reset_caches();
 
         return (object) $record;
+    }
+
+    /**
+     * Store a pasted reference list against a submission.
+     *
+     * @param stdClass $submission An assign_submission record.
+     * @param string $text The reference list as a student would have pasted it.
+     * @return stdClass The stored record.
+     */
+    public function create_text_submission(stdClass $submission, string $text): stdClass {
+        text_submission::save(
+            (int) $submission->assignment,
+            (int) $submission->id,
+            $text,
+        );
+
+        return text_submission::get((int) $submission->id);
+    }
+
+    /**
+     * A short reference list in the shape a student would paste in, with no heading.
+     *
+     * @param int $count How many references to produce.
+     * @return string
+     */
+    public function pasted_reference_list(int $count = 3): string {
+        $references = [];
+        for ($index = 1; $index <= $count; $index++) {
+            $references[] = "Author, A. (20{$index}0). Reference number {$index}. "
+                . "Journal of Things, {$index}(1), 1-10.";
+        }
+
+        return implode("\n", $references);
     }
 
     /**

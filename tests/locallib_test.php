@@ -21,6 +21,8 @@ use assignsubmission_refchecker\local\display_level;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\match_status;
+use assignsubmission_refchecker\local\text_mode;
+use assignsubmission_refchecker\local\text_submission;
 use stdClass;
 
 defined('MOODLE_INTERNAL') || die();
@@ -81,6 +83,7 @@ final class locallib_test extends \advanced_testcase {
         $PAGE->set_context($this->assign->get_context());
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
     }
 
     /**
@@ -90,6 +93,32 @@ final class locallib_test extends \advanced_testcase {
      */
     private function plugin(): \assign_submission_refchecker {
         return $this->assign->get_submission_plugin_by_type('refchecker');
+    }
+
+    /**
+     * A bare form to add submission elements to.
+     *
+     * @return \MoodleQuickForm
+     */
+    private function submission_form(): \MoodleQuickForm {
+        global $CFG;
+
+        require_once($CFG->libdir . '/formslib.php');
+
+        return new \MoodleQuickForm('refcheckertestform', 'post', '/');
+    }
+
+    /**
+     * Store a pasted reference list for the student's submission.
+     *
+     * @return string The text that was stored.
+     */
+    private function seed_text_submission(): string {
+        $generator = $this->getDataGenerator()->get_plugin_generator('assignsubmission_refchecker');
+        $text = $generator->pasted_reference_list(3);
+        $generator->create_text_submission($this->submission, $text);
+
+        return $text;
     }
 
     /**
@@ -119,24 +148,292 @@ final class locallib_test extends \advanced_testcase {
         ]);
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
 
         return $job;
     }
 
     /**
-     * The plugin must not count as something a student can submit.
+     * Whether the plugin counts as something a student can submit follows the mode.
+     *
+     * In the default mode it must not, because it holds nothing a student wrote and would
+     * otherwise make an empty submission look full. In either Yes mode it must, because that is
+     * what puts the References box on the form and lets a pasted list stand in for a file.
+     *
+     * @dataProvider text_mode_provider
+     * @param string $mode The requiretext setting.
+     * @param bool $expected Whether submissions should be allowed.
      */
-    public function test_allow_submissions_is_false(): void {
-        $this->assertFalse($this->plugin()->allow_submissions());
+    public function test_allow_submissions_follows_mode(string $mode, bool $expected): void {
+        $this->plugin()->set_config('requiretext', $mode);
+
+        $this->assertSame($expected, $this->plugin()->allow_submissions());
     }
 
     /**
-     * The plugin holds no submission content, so it must never make an empty submission look full.
+     * Data provider over the three modes, paired with whether a References box is asked for.
+     *
+     * @return array[]
      */
-    public function test_is_empty_is_always_true(): void {
+    public static function text_mode_provider(): array {
+        return [
+            'no text box' => [text_mode::NONE, false],
+            'optional text box' => [text_mode::OPTIONAL, true],
+            'required text box' => [text_mode::REQUIRED, true],
+        ];
+    }
+
+    /**
+     * In the default mode the plugin holds no submission content of its own.
+     */
+    public function test_is_empty_is_true_when_no_text_is_asked_for(): void {
         $this->seed_completed_job();
 
         $this->assertTrue($this->plugin()->is_empty($this->submission));
+    }
+
+    /**
+     * A pasted reference list is submission content, so the plugin is no longer empty.
+     */
+    public function test_is_empty_is_false_once_text_is_pasted(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->seed_text_submission();
+
+        $this->assertFalse($this->plugin()->is_empty($this->submission));
+    }
+
+    /**
+     * In optional mode an empty box with a finished file based check is not "empty".
+     *
+     * The renderer hides the status line for an empty plugin that allows submissions, so answering
+     * true here would lose the result of the check that did run.
+     */
+    public function test_is_empty_is_false_in_optional_mode_when_a_check_exists(): void {
+        $this->plugin()->set_config('requiretext', text_mode::OPTIONAL);
+        $this->seed_completed_job();
+
+        $this->assertFalse($this->plugin()->is_empty($this->submission));
+    }
+
+    /**
+     * In optional mode with nothing pasted and nothing checked there is genuinely nothing here.
+     */
+    public function test_is_empty_is_true_in_optional_mode_with_nothing_at_all(): void {
+        $this->plugin()->set_config('requiretext', text_mode::OPTIONAL);
+
+        $this->assertTrue($this->plugin()->is_empty($this->submission));
+    }
+
+    /**
+     * The pre-save emptiness check reads the form data, whatever is already stored.
+     *
+     * @dataProvider submission_is_empty_provider
+     * @param string $mode The requiretext setting.
+     * @param string|null $pasted What the student typed into the box, or null for no field at all.
+     * @param bool $expected Whether the submission should be treated as empty.
+     */
+    public function test_submission_is_empty(string $mode, ?string $pasted, bool $expected): void {
+        $this->plugin()->set_config('requiretext', $mode);
+
+        $data = new stdClass();
+        if ($pasted !== null) {
+            $data->refchecker_references = $pasted;
+        }
+
+        $this->assertSame($expected, $this->plugin()->submission_is_empty($data));
+    }
+
+    /**
+     * Data provider for the pre-save emptiness test.
+     *
+     * @return array[]
+     */
+    public static function submission_is_empty_provider(): array {
+        return [
+            'no text box, nothing submitted' => [text_mode::NONE, null, true],
+            'no text box ignores stray data' => [text_mode::NONE, 'Author, A. (2020). Thing.', true],
+            'required, box filled in' => [text_mode::REQUIRED, 'Author, A. (2020). Thing.', false],
+            'required, box empty' => [text_mode::REQUIRED, '', true],
+            'required, box all whitespace' => [text_mode::REQUIRED, "  \n\t ", true],
+            'optional, box empty' => [text_mode::OPTIONAL, '', true],
+            'optional, box filled in' => [text_mode::OPTIONAL, 'Author, A. (2020). Thing.', false],
+        ];
+    }
+
+    /**
+     * The References box only appears when the assignment asks for one.
+     *
+     * @dataProvider text_mode_provider
+     * @param string $mode The requiretext setting.
+     * @param bool $expected Whether the box should be added.
+     */
+    public function test_get_form_elements_follows_mode(string $mode, bool $expected): void {
+        $this->plugin()->set_config('requiretext', $mode);
+
+        $mform = $this->submission_form();
+        $data = new stdClass();
+
+        $added = $this->plugin()->get_form_elements($this->submission, $mform, $data);
+
+        $this->assertSame($expected, $added);
+        $this->assertSame($expected, $mform->elementExists('refchecker_references'));
+    }
+
+    /**
+     * The box comes back pre-filled with whatever the student saved last time.
+     */
+    public function test_get_form_elements_prefills_the_stored_text(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $text = $this->seed_text_submission();
+
+        $mform = $this->submission_form();
+        $data = new stdClass();
+
+        $this->plugin()->get_form_elements($this->submission, $mform, $data);
+
+        $this->assertSame($text, $data->refchecker_references);
+    }
+
+    /**
+     * Saving stores the pasted list, and saving again replaces it.
+     */
+    public function test_save_stores_and_replaces_the_text(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->setUser($this->student);
+
+        $this->plugin()->save($this->submission, (object) [
+            'refchecker_references' => "  Author, A. (2020). First. Journal of Things.  ",
+        ]);
+
+        // Stored trimmed, so stray whitespace does not count as a change.
+        $this->assertSame(
+            'Author, A. (2020). First. Journal of Things.',
+            text_submission::text_for((int) $this->submission->id),
+        );
+
+        $this->plugin()->save($this->submission, (object) [
+            'refchecker_references' => 'Author, B. (2021). Second. Journal of Things.',
+        ]);
+
+        $this->assertSame(
+            'Author, B. (2021). Second. Journal of Things.',
+            text_submission::text_for((int) $this->submission->id),
+        );
+    }
+
+    /**
+     * In the default mode save() must not store anything, even if data arrives.
+     */
+    public function test_save_stores_nothing_when_no_text_is_asked_for(): void {
+        global $DB;
+
+        $this->setUser($this->student);
+
+        $this->plugin()->save($this->submission, (object) [
+            'refchecker_references' => 'Author, A. (2020). Thing.',
+        ]);
+
+        $this->assertSame(
+            0,
+            $DB->count_records(text_submission::TABLE, ['submission' => $this->submission->id]),
+        );
+    }
+
+    /**
+     * Saving a reference list announces itself, so the observer can queue a check.
+     *
+     * With File submissions turned off this is the only thing that fires on save, so nothing would
+     * ever be checked without it.
+     */
+    public function test_save_triggers_a_submission_event(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->setUser($this->student);
+
+        $sink = $this->redirectEvents();
+        $this->plugin()->save($this->submission, (object) [
+            'refchecker_references' => 'Author, A. (2020). First. Journal of Things.',
+        ]);
+        $created = $sink->get_events();
+
+        $this->plugin()->save($this->submission, (object) [
+            'refchecker_references' => 'Author, B. (2021). Second. Journal of Things.',
+        ]);
+        $updated = array_slice($sink->get_events(), count($created));
+        $sink->close();
+
+        $this->assertInstanceOf(\assignsubmission_refchecker\event\submission_created::class, $created[0]);
+        $this->assertSame((int) $this->submission->id, (int) $created[0]->other['submissionid']);
+        $this->assertInstanceOf(\assignsubmission_refchecker\event\submission_updated::class, $updated[0]);
+    }
+
+    /**
+     * Clearing the box says nothing: in optional mode that hands the job back to the file, and the
+     * File submissions plugin's own event already covers that.
+     */
+    public function test_save_with_an_empty_box_triggers_nothing(): void {
+        $this->plugin()->set_config('requiretext', text_mode::OPTIONAL);
+        $this->setUser($this->student);
+
+        $sink = $this->redirectEvents();
+        $this->plugin()->save($this->submission, (object) ['refchecker_references' => '']);
+        $events = $sink->get_events();
+        $sink->close();
+
+        $this->assertSame([], $events);
+        $this->assertSame('', text_submission::text_for((int) $this->submission->id));
+    }
+
+    /**
+     * The pasted list is the student's own work, so it is shown at every display level.
+     *
+     * Unlike the check results, which display_level governs, there is nothing to withhold from the
+     * person who wrote it.
+     *
+     * @dataProvider display_level_provider
+     * @param int $level The assignment's studentdisplay setting.
+     */
+    public function test_view_shows_the_pasted_text_at_every_level(int $level): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->plugin()->set_config('studentdisplay', $level);
+        $text = $this->seed_text_submission();
+        $this->seed_completed_job();
+
+        $this->setUser($this->student);
+
+        $output = $this->plugin()->view($this->submission);
+
+        $this->assertStringContainsString('Submitted reference list', $output);
+        $this->assertStringContainsString($text, $output);
+    }
+
+    /**
+     * Data provider over every display level.
+     *
+     * @return array[]
+     */
+    public static function display_level_provider(): array {
+        return [
+            'status only' => [display_level::STATUS_ONLY],
+            'summary' => [display_level::SUMMARY],
+            'full' => [display_level::FULL],
+        ];
+    }
+
+    /**
+     * The pasted list is reachable even before any check has been queued.
+     */
+    public function test_view_summary_offers_the_text_before_a_check_exists(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $text = $this->seed_text_submission();
+
+        $this->setUser($this->student);
+
+        $showviewlink = false;
+        $summary = $this->plugin()->view_summary($this->submission, $showviewlink);
+
+        $this->assertStringContainsString('A reference list has been submitted.', $summary);
+        $this->assertTrue($showviewlink);
+        $this->assertStringContainsString($text, $this->plugin()->view($this->submission));
     }
 
     /**
@@ -169,6 +466,7 @@ final class locallib_test extends \advanced_testcase {
             'checkedrefs' => 15,
         ]);
         job_manager::reset_caches();
+        text_submission::reset_caches();
 
         $this->setUser($this->student);
 
@@ -342,20 +640,24 @@ final class locallib_test extends \advanced_testcase {
     }
 
     /**
-     * Removing a submission clears both of the plugin's tables.
+     * Removing a submission clears everything the plugin holds for it.
      */
-    public function test_remove_deletes_job_and_references(): void {
+    public function test_remove_deletes_job_references_and_text(): void {
         global $DB;
 
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->seed_text_submission();
         $this->seed_completed_job();
 
         $this->assertSame(1, $DB->count_records(job_manager::TABLE_JOB, ['submission' => $this->submission->id]));
         $this->assertSame(2, $DB->count_records(job_manager::TABLE_REFS, ['submission' => $this->submission->id]));
+        $this->assertSame(1, $DB->count_records(text_submission::TABLE, ['submission' => $this->submission->id]));
 
         $this->plugin()->remove($this->submission);
 
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_JOB, ['submission' => $this->submission->id]));
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_REFS, ['submission' => $this->submission->id]));
+        $this->assertSame(0, $DB->count_records(text_submission::TABLE, ['submission' => $this->submission->id]));
     }
 
     /**
@@ -364,6 +666,8 @@ final class locallib_test extends \advanced_testcase {
     public function test_delete_instance_clears_the_assignment(): void {
         global $DB;
 
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->seed_text_submission();
         $this->seed_completed_job();
 
         $this->plugin()->delete_instance();
@@ -371,6 +675,7 @@ final class locallib_test extends \advanced_testcase {
         $assignmentid = $this->assign->get_instance()->id;
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_JOB, ['assignment' => $assignmentid]));
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_REFS, ['submission' => $this->submission->id]));
+        $this->assertSame(0, $DB->count_records(text_submission::TABLE, ['assignment' => $assignmentid]));
     }
 
     /**
@@ -379,6 +684,8 @@ final class locallib_test extends \advanced_testcase {
     public function test_copy_submission_carries_results_forward(): void {
         global $DB;
 
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $text = $this->seed_text_submission();
         $job = $this->seed_completed_job();
 
         $destination = (object) [
@@ -392,14 +699,31 @@ final class locallib_test extends \advanced_testcase {
         $this->assertNotFalse($copied);
         $this->assertSame($job->contenthash, $copied->contenthash);
         $this->assertSame(2, $DB->count_records(job_manager::TABLE_REFS, ['jobid' => $copied->id]));
+
+        // The student starts the reopened attempt from what they wrote last time.
+        $this->assertSame($text, text_submission::text_for((int) $destination->id));
     }
 
     /**
-     * Only the two display settings are exposed to web service clients.
+     * Only the settings a client needs to render the submission form are exposed.
      */
     public function test_get_config_for_external_is_narrow(): void {
         $config = $this->plugin()->get_config_for_external();
 
-        $this->assertSame(['studentdisplay', 'checktiming'], array_keys($config));
+        $this->assertSame(['studentdisplay', 'checktiming', 'requiretext'], array_keys($config));
+        $this->assertSame(text_mode::NONE, $config['requiretext']);
+    }
+
+    /**
+     * The pasted list is exported as text, so it reaches downloads and web services.
+     */
+    public function test_editor_fields_expose_the_pasted_text(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $text = $this->seed_text_submission();
+        $submissionid = (int) $this->submission->id;
+
+        $this->assertSame(['references'], array_keys($this->plugin()->get_editor_fields()));
+        $this->assertSame($text, $this->plugin()->get_editor_text('references', $submissionid));
+        $this->assertSame((int) FORMAT_PLAIN, $this->plugin()->get_editor_format('references', $submissionid));
     }
 }

@@ -9,8 +9,8 @@ how each external database is queried and paced, what an administrator can see, 
 
 ## 1. What the plugin is
 
-The plugin makes **no submission of its own**. `allow_submissions()` returns `false` and
-`is_empty()` always returns `true`, so it never appears in the submission form and never affects
+By default the plugin makes **no submission of its own**. In that mode `allow_submissions()` returns
+`false` and `is_empty()` returns `true`, so it never appears in the submission form and never affects
 whether a student is considered to have submitted. What it does is:
 
 1. observe the submission events raised by mod_assign,
@@ -22,6 +22,39 @@ whether a student is considered to have submitted. What it does is:
 Without `assignsubmission_file` enabled and visible on the assignment there is nothing to read, and
 the plugin says so on the settings form ([lib.php](../lib.php) `get_settings()`) rather than leaving
 a teacher to discover it after the due date.
+
+### 1.1 Text reference lists
+
+The per-assignment **Require text references** setting ([text_mode.php](../classes/local/text_mode.php),
+config key `requiretext`) changes all of that. It has three values:
+
+| Value | Behaviour |
+|---|---|
+| `no` (default) | As above. References are read out of the submitted file. |
+| `optional` | A plain-text **References** box appears on the submission form. If the student uses it, that text is checked and the file is not read. If they leave it empty, extraction falls back to the file. |
+| `required` | The box appears and must be filled in; a QuickForm `required` rule blocks even a draft save. The file is never read. |
+
+Step 3 above — the least reliable part of the whole pipeline, because it depends on `pdftotext`
+output and on a bibliography heading being recognisable — disappears entirely when the student
+pastes their list in. That is the reason the setting exists.
+
+In either Yes mode the plugin does accept a submission, which has consequences worth knowing about:
+
+- `allow_submissions()` becomes `true`, which is what makes core call `get_form_elements()` and, via
+  `assign::new_submission_empty()`, what lets a pasted list satisfy the assignment on its own. **This
+  is what makes File submissions optional**: an assignment can be set up for the reference checker
+  alone, with `assignsubmission_file` disabled.
+- `is_empty()` has to answer honestly, because `assign\output\renderer` hides the status line for an
+  empty plugin that allows submissions (`!is_empty() || !allow_submissions()`). In optional mode an
+  empty box with a finished file-based check is therefore *not* empty — otherwise the result of the
+  check that did run would vanish from the page.
+- The strict "did the student submit anything?" gate is `submission_is_empty()`, which core applies
+  to the form data before anything is stored. `is_empty()` is only a display and backstop signal.
+
+The pasted text lives in its own table via
+[text_submission.php](../classes/local/text_submission.php), separate from `job_manager`: it is the
+student's own work and shares the submission's lifecycle (copied forward on attempt reopen, backed
+up, exported for privacy), whereas a job is derived data that can be discarded and rebuilt.
 
 ---
 
@@ -126,15 +159,24 @@ mod/assign/submission/refchecker/
 | `\mod_assign\event\submission_created` | `submission_changed()` | `save` |
 | `\mod_assign\event\submission_updated` | `submission_changed()` | `save` |
 
-`submission_created` / `submission_updated` are abstract; what is actually triggered is the File
-submissions plugin's own subclass. Observing the abstract parent catches it, because core resolves
-an event's whole ancestry when dispatching — and it avoids hard-coding another subplugin's class
-name.
+`submission_created` / `submission_updated` are abstract; what is actually triggered is a
+subplugin's own subclass — the File submissions plugin's, or this plugin's own pair in
+[classes/event/](../classes/event/) when a reference list is pasted in. Observing the abstract parent
+catches both, because core resolves an event's whole ancestry when dispatching — and it avoids
+hard-coding another subplugin's class name.
+
+Those two event classes exist purely so that `checktiming = save` works with File submissions turned
+off. `assessable_submitted` is raised by core itself, so `submit` timing needs nothing extra, but
+nothing at all fires on a draft save unless a subplugin raises it. `save()` triggers them only when
+the box is non-empty: clearing it in optional mode hands the work back to the file, which the File
+submissions plugin's own event already covers. When both plugins are enabled and text was pasted,
+both fire on the same save, the generation is bumped twice, and the first task abandons its work on
+the generation guard — one wasted no-op task, no incorrect result.
 
 The observer queues work only when **all** of these hold:
 
 - the refchecker plugin is enabled and visible on the assignment,
-- `assignsubmission_file` is enabled and visible,
+- `assignsubmission_file` is enabled and visible, **or** `requiretext` asks for a text reference list,
 - the assignment's `checktiming` setting matches the timing this observer represents.
 
 `checktiming` is either `submit` (default — one pass per attempt) or `save` (formative feedback
@@ -160,14 +202,17 @@ external API quota, so it is restricted to people who can grade rather than anyo
 flowchart TD
     A[Load job, verify generation] --> B{Assignment + plugin still there?}
     B -- no --> Z1[status = cancelled]
-    B -- yes --> C[Collect candidate files]
+    B -- yes --> T{Pasted reference list?}
+    T -- yes --> T1[contenthash = sha1 of the text]
+    T1 --> F
+    T -- no --> C[Collect candidate files]
     C --> D{Any candidates?}
     D -- no --> Z2[status = notapplicable]
     D -- yes --> E[contenthash = sha1 of sorted file contenthashes]
     E --> F{Unchanged since last check?}
     F -- yes --> Z3[status = complete, no requests made]
     F -- no --> G[status = extracting]
-    G --> H[Per file: extract text, parse, dedupe by refhash]
+    G --> H[Parse the text, or per file: extract, parse, dedupe by refhash]
     H --> I{Any references?}
     I -- no --> Z4[status = norefs]
     I -- yes --> J[Truncate to maxreferences, store rows]
@@ -176,6 +221,14 @@ flowchart TD
     L -- no --> Z5[status = complete]
     L -- yes --> M[status = checking, queue check_references]
 ```
+
+**A pasted reference list** short-circuits everything below: `submitted_text()` returns it whenever
+`requiretext` asks for one and the student filled the box in, and the file is then never opened. The
+fallback that optional mode promises falls out of that condition rather than being coded separately —
+an empty box simply means the file branch runs. Because a pasted list normally has no heading it goes
+through `reference_parser::parse_list()` rather than `parse()`; `parse()` reports `found => false`
+when no heading matches, which would make every text submission come back as `norefs`. Rows stored
+this way carry no `sourcefile`, and the job no `sectionheading`.
 
 **Candidate files** come from the `assignsubmission_file` / `submission_files` area for this
 submission. `extractor::is_candidate()` filters on extension (site setting `supportedtypes`,
@@ -803,7 +856,22 @@ scrubbed of `raw` / `rawref` / `query` before storage.
 
 Never written for a degraded result — see §4.3.
 
-### 7.4 `assignsubmission_refchecker_rate` — per-source pacing and health
+### 7.4 `assignsubmission_refchecker_text` — the pasted reference list
+
+One row per submission, holding the student's own work rather than anything derived from it. Written
+by `save()`, copied by `copy_submission()`, deleted by `remove()` and `delete_instance()`, and
+included in course backups and privacy exports.
+
+| Column | Purpose |
+|---|---|
+| `assignment`, `submission` | `submission` is **foreign-unique**: at most one list per submission |
+| `referencetext` | The reference list exactly as pasted. Plain text, never HTML |
+| `timecreated`, `timemodified` | |
+
+Stored as `PARAM_RAW` and escaped on output, not cleaned on input: `PARAM_TEXT` runs `strip_tags()`,
+which would silently swallow legitimate fragments such as `Smith <2020>`.
+
+### 7.5 `assignsubmission_refchecker_rate` — per-source pacing and health
 
 One row per source, shared across all cron workers. Serves both the rate limiter and the circuit
 breaker.
@@ -849,8 +917,9 @@ management page.
 | `studentinformation`, `privacynotice` | — | HTML shown on the assignment page |
 | `defaultstudentdisplay` | Status only | |
 | `defaultchecktiming` | On submit | |
+| `defaultrequiretext` | No | Whether new assignments start out asking for a text reference list |
 
-Per-assignment settings: `studentdisplay`, `checktiming`, `maxreferences`.
+Per-assignment settings: `studentdisplay`, `checktiming`, `maxreferences`, `requiretext`.
 
 ---
 

@@ -17,6 +17,7 @@
 namespace assignsubmission_refchecker\privacy;
 
 use assignsubmission_refchecker\local\job_manager;
+use assignsubmission_refchecker\local\text_submission;
 use core_privacy\local\metadata\collection;
 // Aliased because this class is itself called provider.
 use core_privacy\local\metadata\provider as metadata_provider;
@@ -32,9 +33,9 @@ use mod_assign\privacy\useridlist;
 /**
  * Privacy Subsystem for assignsubmission_refchecker.
  *
- * The plugin stores the reference list extracted from a student's submission and the result of
- * checking each entry, and it sends reference text to bibliographic databases outside the
- * institution. Both of those are declared here.
+ * The plugin stores the reference list a student submitted, either pasted in as text or extracted
+ * from their uploaded files, and the result of checking each entry. It also sends reference text to
+ * bibliographic databases outside the institution. All of those are declared here.
  *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>
@@ -68,6 +69,15 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
                 'timechecked' => 'privacy:metadata:refs:timechecked',
             ],
             'privacy:metadata:refs',
+        );
+
+        $collection->add_database_table(
+            text_submission::TABLE,
+            [
+                'referencetext' => 'privacy:metadata:text:referencetext',
+                'timemodified' => 'privacy:metadata:text:timemodified',
+            ],
+            'privacy:metadata:text',
         );
 
         // Shared across the whole site and holding no student written text, but declared anyway:
@@ -163,12 +173,27 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
             return;
         }
 
+        $text = text_submission::get((int) $submission->id);
         $job = $DB->get_record(job_manager::TABLE_JOB, ['submission' => $submission->id]);
+
+        $subcontext = array_merge(
+            $exportdata->get_subcontext(),
+            [get_string('privacy:path', 'assignsubmission_refchecker')],
+        );
+
         if (!$job) {
+            // A reference list can have been pasted in before any check has run.
+            if ($text) {
+                writer::with_context($exportdata->get_context())->export_data($subcontext, (object) [
+                    'submittedreferences' => $text->referencetext,
+                ]);
+            }
+
             return;
         }
 
         $export = (object) [
+            'submittedreferences' => $text ? $text->referencetext : null,
             'status' => $job->status,
             'referencesfound' => (int) $job->totalrefs,
             'referenceschecked' => (int) $job->checkedrefs,
@@ -200,11 +225,6 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
             ];
         }
 
-        $subcontext = array_merge(
-            $exportdata->get_subcontext(),
-            [get_string('privacy:path', 'assignsubmission_refchecker')],
-        );
-
         writer::with_context($exportdata->get_context())->export_data($subcontext, $export);
     }
 
@@ -216,6 +236,7 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
      */
     public static function delete_submission_for_context(assign_plugin_request_data $requestdata) {
         job_manager::delete_for_assignment((int) $requestdata->get_assignid());
+        text_submission::delete_for_assignment((int) $requestdata->get_assignid());
     }
 
     /**
@@ -231,6 +252,7 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
         }
 
         job_manager::delete_for_submission((int) $submission->id);
+        text_submission::delete_for_submission((int) $submission->id);
     }
 
     /**
@@ -251,7 +273,9 @@ class provider implements assignsubmission_provider, assignsubmission_user_provi
 
         $DB->delete_records_select(job_manager::TABLE_REFS, "submission $insql", $params);
         $DB->delete_records_select(job_manager::TABLE_JOB, "submission $insql", $params);
+        $DB->delete_records_select(text_submission::TABLE, "submission $insql", $params);
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
     }
 }

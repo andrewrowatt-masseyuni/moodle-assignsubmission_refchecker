@@ -17,10 +17,11 @@
 /**
  * Event observers for Reference Checker
  *
- * submission_created and submission_updated are abstract: what actually gets triggered is the
- * File submissions plugin's own subclass of them. Observing the abstract parent catches it,
- * because core resolves an event's whole ancestry when dispatching, and it keeps this plugin from
- * hard-coding another subplugin's event class.
+ * submission_created and submission_updated are abstract: what actually gets triggered is a
+ * subplugin's own subclass of them, either the File submissions plugin's or this plugin's own pair
+ * for a pasted reference list. Observing the abstract parent catches both, because core resolves an
+ * event's whole ancestry when dispatching, and it keeps this plugin from hard-coding another
+ * subplugin's event class.
  *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>

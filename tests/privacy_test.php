@@ -18,6 +18,7 @@ namespace assignsubmission_refchecker;
 
 use assign;
 use assignsubmission_refchecker\local\job_manager;
+use assignsubmission_refchecker\local\text_submission;
 use assignsubmission_refchecker\privacy\provider;
 use core_privacy\local\metadata\collection;
 use core_privacy\local\request\writer;
@@ -75,6 +76,7 @@ final class privacy_test extends \advanced_testcase {
         writer::reset();
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
     }
 
     /**
@@ -96,8 +98,10 @@ final class privacy_test extends \advanced_testcase {
             'verifiedrefs' => 1,
         ]);
         $generator->create_reference($job, ['rawref' => $rawref]);
+        $generator->create_text_submission($submission, 'PASTED ' . $rawref);
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
 
         return $submission;
     }
@@ -119,6 +123,7 @@ final class privacy_test extends \advanced_testcase {
         $this->assertContains(job_manager::TABLE_JOB, $names);
         $this->assertContains(job_manager::TABLE_REFS, $names);
         $this->assertContains(job_manager::TABLE_CACHE, $names);
+        $this->assertContains(text_submission::TABLE, $names);
         $this->assertContains('crossref', $names);
         $this->assertContains('openalex', $names);
     }
@@ -150,6 +155,33 @@ final class privacy_test extends \advanced_testcase {
 
         $this->assertSame(1, $exported->referencesfound);
         $this->assertSame('EXPORTEDREFERENCETEXT', $exported->references[0]->reference);
+        $this->assertSame('PASTED EXPORTEDREFERENCETEXT', $exported->submittedreferences);
+    }
+
+    /**
+     * A pasted list is exported even when no check has run against it yet.
+     */
+    public function test_export_includes_a_pasted_list_with_no_job(): void {
+        $submission = $this->assign->get_user_submission($this->student->id, true);
+        $this->getDataGenerator()
+            ->get_plugin_generator('assignsubmission_refchecker')
+            ->create_text_submission($submission, 'UNCHECKEDPASTEDLIST');
+
+        $context = $this->assign->get_context();
+        provider::export_submission_user_data(new assign_plugin_request_data(
+            $context,
+            $this->assign,
+            $submission,
+            ['Reference check test'],
+            $this->student,
+        ));
+
+        $exported = writer::with_context($context)->get_data([
+            'Reference check test',
+            get_string('privacy:path', 'assignsubmission_refchecker'),
+        ]);
+
+        $this->assertSame('UNCHECKEDPASTEDLIST', $exported->submittedreferences);
     }
 
     /**
@@ -166,6 +198,7 @@ final class privacy_test extends \advanced_testcase {
 
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_JOB));
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_REFS));
+        $this->assertSame(0, $DB->count_records(text_submission::TABLE));
     }
 
     /**
@@ -188,10 +221,12 @@ final class privacy_test extends \advanced_testcase {
 
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_JOB, ['submission' => $submission->id]));
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_REFS, ['submission' => $submission->id]));
+        $this->assertSame(0, $DB->count_records(text_submission::TABLE, ['submission' => $submission->id]));
 
         // The other student is untouched.
         $this->assertSame(1, $DB->count_records(job_manager::TABLE_JOB));
         $this->assertSame(1, $DB->count_records(job_manager::TABLE_REFS));
+        $this->assertSame(1, $DB->count_records(text_submission::TABLE));
     }
 
     /**
@@ -210,7 +245,9 @@ final class privacy_test extends \advanced_testcase {
         provider::delete_submissions($deletedata);
 
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_JOB, ['submission' => $submission->id]));
+        $this->assertSame(0, $DB->count_records(text_submission::TABLE, ['submission' => $submission->id]));
         $this->assertSame(1, $DB->count_records(job_manager::TABLE_JOB));
         $this->assertSame(1, $DB->count_records(job_manager::TABLE_REFS));
+        $this->assertSame(1, $DB->count_records(text_submission::TABLE));
     }
 }

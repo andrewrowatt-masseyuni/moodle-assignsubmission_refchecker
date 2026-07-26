@@ -605,4 +605,32 @@ class reference_parser {
             'references' => $references,
         ];
     }
+
+    /**
+     * Parse text that is already known to be nothing but a reference list.
+     *
+     * Used for the list a student pastes into the submission form. The heading search that
+     * {@see parse()} relies on must not gate this: a pasted list usually has no heading at all, and
+     * treating that as "no reference list found" would make the whole text mode useless. A heading
+     * is still honoured if one was pasted along with the list, since anything above it is then
+     * prose the student did not mean to submit.
+     *
+     * @param string $text The reference list as the student pasted it.
+     * @return array{found: bool, heading: string, references: array<int, array>}
+     */
+    public static function parse_list(string $text): array {
+        $section = self::find_section($text);
+        $body = $section['found'] ? $section['text'] : $text;
+
+        $references = [];
+        foreach (self::split($body) as $raw) {
+            $references[] = array_merge(['raw' => $raw], self::parse_metadata($raw));
+        }
+
+        return [
+            'found' => (bool) $references,
+            'heading' => $section['found'] ? $section['heading'] : '',
+            'references' => $references,
+        ];
+    }
 }

@@ -19,6 +19,8 @@ namespace assignsubmission_refchecker;
 use assign;
 use assignsubmission_refchecker\local\check_timing;
 use assignsubmission_refchecker\local\job_manager;
+use assignsubmission_refchecker\local\text_mode;
+use assignsubmission_refchecker\local\text_submission;
 use assignsubmission_refchecker\task\extract_references;
 use stdClass;
 
@@ -71,6 +73,7 @@ final class observer_test extends \advanced_testcase {
         $this->submission = $this->assign->get_user_submission($this->student->id, true);
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
     }
 
     /**
@@ -132,6 +135,33 @@ final class observer_test extends \advanced_testcase {
                 'submissionattempt' => 0,
                 'submissionstatus' => ASSIGN_SUBMISSION_STATUS_SUBMITTED,
                 'filesubmissioncount' => 1,
+            ],
+        ]);
+        $event->set_assign($this->assign);
+        $event->trigger();
+    }
+
+    /**
+     * Trigger this plugin's own submission_created event for a pasted reference list.
+     *
+     * @return void
+     */
+    private function trigger_text_submission_created(): void {
+        $record = $this->getDataGenerator()
+            ->get_plugin_generator('assignsubmission_refchecker')
+            ->create_text_submission(
+                $this->submission,
+                'Author, A. (2020). A study of things. Journal of Things, 1(1), 1-10.',
+            );
+
+        $event = \assignsubmission_refchecker\event\submission_created::create([
+            'context' => $this->assign->get_context(),
+            'objectid' => $record->id,
+            'relateduserid' => $this->student->id,
+            'other' => [
+                'submissionid' => $this->submission->id,
+                'submissionattempt' => 0,
+                'submissionstatus' => ASSIGN_SUBMISSION_STATUS_SUBMITTED,
             ],
         ]);
         $event->set_assign($this->assign);
@@ -288,6 +318,54 @@ final class observer_test extends \advanced_testcase {
             'file submissions disabled' => ['fileplugin'],
             'plugin hidden site wide' => ['sitewide'],
         ];
+    }
+
+    /**
+     * An assignment asking for a pasted reference list does not need File submissions.
+     *
+     * Without this the plugin could not be used on its own, because the observer's file plugin
+     * guard would swallow every trigger.
+     *
+     * @dataProvider text_mode_provider
+     * @param string $mode The requiretext setting.
+     */
+    public function test_check_is_queued_with_no_file_plugin_in_text_mode(string $mode): void {
+        $this->plugin()->set_config('checktiming', check_timing::SUBMIT);
+        $this->plugin()->set_config('requiretext', $mode);
+        $this->assign->get_submission_plugin_by_type('file')->disable();
+
+        // Both is_enabled() and is_visible() are memoised on the plugin object.
+        $this->reload_assign();
+
+        $this->trigger_assessable_submitted();
+
+        $this->assertSame(1, $this->queued_tasks());
+    }
+
+    /**
+     * Data provider over the two modes that offer a References box.
+     *
+     * @return array[]
+     */
+    public static function text_mode_provider(): array {
+        return [
+            'optional text box' => [text_mode::OPTIONAL],
+            'required text box' => [text_mode::REQUIRED],
+        ];
+    }
+
+    /**
+     * The plugin's own save event queues a check, which is the only trigger in text-only mode.
+     */
+    public function test_pasted_list_event_queues_a_check(): void {
+        $this->plugin()->set_config('checktiming', check_timing::SAVE);
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->assign->get_submission_plugin_by_type('file')->disable();
+        $this->reload_assign();
+
+        $this->trigger_text_submission_created();
+
+        $this->assertSame(1, $this->queued_tasks());
     }
 
     /**

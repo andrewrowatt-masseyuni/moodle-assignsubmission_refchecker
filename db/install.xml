@@ -89,6 +89,21 @@
         <INDEX NAME="refhash" UNIQUE="false" FIELDS="refhash"/>
       </INDEXES>
     </TABLE>
+    <TABLE NAME="assignsubmission_refchecker_text" COMMENT="The reference list a student pasted into the submission form, when the assignment asks for one">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="assignment" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The assignment instance this text belongs to."/>
+        <FIELD NAME="submission" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The submission this text belongs to."/>
+        <FIELD NAME="referencetext" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The reference list exactly as the student pasted it. Plain text, never HTML."/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="The unique id for this pasted reference list."/>
+        <KEY NAME="assignment" TYPE="foreign" FIELDS="assignment" REFTABLE="assign" REFFIELDS="id"/>
+        <KEY NAME="submission" TYPE="foreign-unique" FIELDS="submission" REFTABLE="assign_submission" REFFIELDS="id" COMMENT="At most one pasted reference list per submission."/>
+      </KEYS>
+    </TABLE>
     <TABLE NAME="assignsubmission_refchecker_cache" COMMENT="Shared cache of lookup results keyed by normalised reference hash. Holds no student authored text.">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>

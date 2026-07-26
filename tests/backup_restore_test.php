@@ -19,6 +19,8 @@ namespace assignsubmission_refchecker;
 use assign;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\match_status;
+use assignsubmission_refchecker\local\text_mode;
+use assignsubmission_refchecker\local\text_submission;
 use backup;
 use backup_controller;
 use restore_controller;
@@ -34,7 +36,7 @@ require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
 require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
 
 /**
- * Tests that reference check results survive a course backup and restore.
+ * Tests that submitted reference lists and check results survive a course backup and restore.
  *
  * @package    assignsubmission_refchecker
  * @category   test
@@ -47,7 +49,7 @@ final class backup_restore_test extends \advanced_testcase {
     use \mod_assign_test_generator;
 
     /**
-     * Duplicating a course carries the job and its references across, correctly re-parented.
+     * Duplicating a course carries the pasted list, the job and its references across, re-parented.
      */
     public function test_results_survive_a_duplication(): void {
         global $DB, $USER;
@@ -61,10 +63,12 @@ final class backup_restore_test extends \advanced_testcase {
         $assign = $this->create_instance($course, [
             'assignsubmission_file_enabled' => 1,
             'assignsubmission_refchecker_enabled' => 1,
+            'assignsubmission_refchecker_requiretext' => text_mode::REQUIRED,
         ]);
         $submission = $assign->get_user_submission($student->id, true);
 
         $generator = $this->getDataGenerator()->get_plugin_generator('assignsubmission_refchecker');
+        $generator->create_text_submission($submission, 'BACKUPPASTEDREFERENCELIST');
         $job = $generator->create_job([
             'assignment' => $assign->get_instance()->id,
             'submission' => $submission->id,
@@ -111,6 +115,12 @@ final class backup_restore_test extends \advanced_testcase {
         foreach ($newrefs as $ref) {
             $this->assertEquals($newjob->submission, $ref->submission);
         }
+
+        // The student's own work matters more than any of the derived results above.
+        $newtext = $DB->get_record(text_submission::TABLE, ['submission' => $newjob->submission]);
+        $this->assertNotFalse($newtext);
+        $this->assertSame('BACKUPPASTEDREFERENCELIST', $newtext->referencetext);
+        $this->assertEquals($newcm->instance, $newtext->assignment);
     }
 
     /**

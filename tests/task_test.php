@@ -21,6 +21,8 @@ use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\match_status;
+use assignsubmission_refchecker\local\text_mode;
+use assignsubmission_refchecker\local\text_submission;
 use assignsubmission_refchecker\task\check_references;
 use assignsubmission_refchecker\task\extract_references;
 use core\task\adhoc_task;
@@ -87,6 +89,7 @@ final class task_test extends \advanced_testcase {
         set_config('chunksize', 2, 'assignsubmission_refchecker');
 
         job_manager::reset_caches();
+        text_submission::reset_caches();
     }
 
     /**
@@ -111,6 +114,39 @@ final class task_test extends \advanced_testcase {
             'filepath' => '/',
             'filename' => 'essay.txt',
         ], implode("\n", $lines));
+    }
+
+    /**
+     * Ask this assignment for a pasted reference list.
+     *
+     * @param string $mode One of the text_mode constants.
+     * @return void
+     */
+    private function set_text_mode(string $mode): void {
+        $this->assign->get_submission_plugin_by_type('refchecker')->set_config('requiretext', $mode);
+    }
+
+    /**
+     * Store a pasted reference list against the submission, in the shape a student would type.
+     *
+     * Deliberately with no "References" heading, which is the normal case for a pasted list and the
+     * one the file based parser would reject.
+     *
+     * @param int $references How many references to write. Zero stores an empty box.
+     * @return void
+     */
+    private function paste_reference_list(int $references = 3): void {
+        $lines = [];
+        for ($i = 1; $i <= $references; $i++) {
+            $lines[] = "Author{$i}, A. (201{$i}). The study of subject number {$i} in context. "
+                . "Journal of Things, {$i}(1), 1-10.";
+        }
+
+        text_submission::save(
+            (int) $this->assign->get_instance()->id,
+            (int) $this->submission->id,
+            implode("\n", $lines),
+        );
     }
 
     /**
@@ -267,6 +303,132 @@ final class task_test extends \advanced_testcase {
      */
     public function test_extract_truncates_at_the_cap(): void {
         $this->attach_submission_file(5);
+        $this->assign->get_submission_plugin_by_type('refchecker')->set_config('maxreferences', 2);
+
+        $job = $this->start_job();
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $reloaded = job_manager::load((int) $this->submission->id);
+        $this->assertSame(2, (int) $reloaded->totalrefs);
+        $this->assertSame(1, (int) $reloaded->truncated);
+    }
+
+    /**
+     * A pasted reference list is used, and the uploaded file is not read at all.
+     *
+     * The file here holds five references and the pasted list three, so the count alone proves
+     * which source was used.
+     *
+     * @dataProvider text_source_provider
+     * @param string $mode The requiretext setting.
+     */
+    public function test_extract_prefers_the_pasted_list(string $mode): void {
+        $this->set_text_mode($mode);
+        $this->attach_submission_file(5);
+        $this->paste_reference_list(3);
+
+        $job = $this->start_job();
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $reloaded = job_manager::load((int) $this->submission->id);
+        $this->assertSame(job_status::CHECKING, $reloaded->status);
+        $this->assertSame(3, (int) $reloaded->totalrefs);
+        // A pasted list has no document section, so there is no heading to report back.
+        $this->assertNull($reloaded->sectionheading);
+
+        foreach (job_manager::get_references((int) $reloaded->id) as $reference) {
+            $this->assertNull($reference->sourcefile);
+        }
+    }
+
+    /**
+     * Data provider over the two modes that offer a References box.
+     *
+     * @return array[]
+     */
+    public static function text_source_provider(): array {
+        return [
+            'optional text box' => [text_mode::OPTIONAL],
+            'required text box' => [text_mode::REQUIRED],
+        ];
+    }
+
+    /**
+     * A pasted list with no heading is still read, which is the point of the whole mode.
+     */
+    public function test_extract_reads_a_pasted_list_with_no_heading(): void {
+        $this->set_text_mode(text_mode::REQUIRED);
+        $this->paste_reference_list(3);
+
+        $job = $this->start_job();
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $this->assertSame(3, (int) job_manager::load((int) $this->submission->id)->totalrefs);
+    }
+
+    /**
+     * Optional mode falls back to the uploaded file when the box was left empty.
+     */
+    public function test_extract_falls_back_to_the_file_in_optional_mode(): void {
+        $this->set_text_mode(text_mode::OPTIONAL);
+        $this->attach_submission_file(5);
+        $this->paste_reference_list(0);
+
+        $job = $this->start_job();
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $reloaded = job_manager::load((int) $this->submission->id);
+        $this->assertSame(5, (int) $reloaded->totalrefs);
+        $this->assertSame('References', $reloaded->sectionheading);
+    }
+
+    /**
+     * A text mode assignment with an empty box and no file has nothing to do.
+     */
+    public function test_extract_with_no_text_and_no_file_is_not_applicable(): void {
+        $this->set_text_mode(text_mode::REQUIRED);
+
+        $job = $this->start_job();
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $this->assertSame(
+            job_status::NOTAPPLICABLE,
+            job_manager::load((int) $this->submission->id)->status,
+        );
+    }
+
+    /**
+     * Text that has not changed since the last check is not checked again.
+     */
+    public function test_extract_skips_an_unchanged_pasted_list(): void {
+        $this->set_text_mode(text_mode::REQUIRED);
+        $this->paste_reference_list(2);
+
+        $job = $this->start_job();
+        $this->mock_responses([
+            self::crossref_hit('The study of subject number 1 in context'),
+            self::crossref_hit('The study of subject number 2 in context'),
+        ]);
+        $this->run_task($this->task(extract_references::class, $job));
+        $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
+
+        $this->assertSame(job_status::COMPLETE, job_manager::load((int) $this->submission->id)->status);
+
+        // Re-saving the same text starts a new generation but must not re-extract.
+        $requeued = $this->start_job();
+        $this->run_task($this->task(extract_references::class, $requeued));
+
+        $reloaded = job_manager::load((int) $this->submission->id);
+        $this->assertSame(job_status::COMPLETE, $reloaded->status);
+        $this->assertSame(2, (int) $reloaded->totalrefs);
+    }
+
+    /**
+     * The reference cap applies to a pasted list too.
+     */
+    public function test_extract_truncates_a_pasted_list_at_the_cap(): void {
+        $this->set_text_mode(text_mode::REQUIRED);
+        $this->paste_reference_list(5);
         $this->assign->get_submission_plugin_by_type('refchecker')->set_config('maxreferences', 2);
 
         $job = $this->start_job();

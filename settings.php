@@ -28,6 +28,7 @@
 
 use assignsubmission_refchecker\local\check_timing;
 use assignsubmission_refchecker\local\display_level;
+use assignsubmission_refchecker\local\text_mode;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -244,4 +245,12 @@ $settings->add(new admin_setting_configselect(
     new lang_string('defaultchecktiming_help', 'assignsubmission_refchecker'),
     check_timing::SUBMIT,
     check_timing::menu()
+));
+
+$settings->add(new admin_setting_configselect(
+    'assignsubmission_refchecker/defaultrequiretext',
+    new lang_string('defaultrequiretext', 'assignsubmission_refchecker'),
+    new lang_string('defaultrequiretext_help', 'assignsubmission_refchecker'),
+    text_mode::NONE,
+    text_mode::menu()
 ));

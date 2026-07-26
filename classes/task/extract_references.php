@@ -20,13 +20,16 @@ use assignsubmission_refchecker\local\extractor;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\reference_parser;
+use assignsubmission_refchecker\local\text_mode;
+use assignsubmission_refchecker\local\text_submission;
 use core\task\adhoc_task;
 use core\task\manager;
 use stdClass;
 use stored_file;
 
 /**
- * Reads the reference list out of a student's submitted files.
+ * Reads the reference list a student submitted, either from the box they pasted it into or out of
+ * their uploaded files.
  *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>
@@ -75,24 +78,35 @@ class extract_references extends adhoc_task {
             return;
         }
 
-        $files = $this->candidate_files($assign, $submission);
-        if (!$files) {
+        // A pasted reference list is used in preference to anything uploaded: it is what the student
+        // meant to have checked, and it needs no text extraction. An empty box falls through to the
+        // files, which is exactly the fallback that optional mode promises.
+        $text = $this->submitted_text($assign, $submission);
+        $files = $text === '' ? $this->candidate_files($assign, $submission) : [];
+
+        if ($text === '' && !$files) {
             mtrace('  Nothing scannable was submitted.');
             job_manager::set_status($job, job_status::NOTAPPLICABLE);
             return;
         }
 
         // An unchanged resubmission does not need checking again.
-        $contenthash = $this->content_hash($files);
+        $contenthash = $text !== '' ? sha1($text) : $this->content_hash($files);
         if ($job->contenthash === $contenthash && (int) $job->totalrefs > 0) {
-            mtrace('  Files are unchanged since the last completed check.');
+            mtrace('  Unchanged since the last completed check.');
             job_manager::set_status($job, job_status::COMPLETE);
             return;
         }
 
         job_manager::set_status($job, job_status::EXTRACTING);
 
-        [$references, $heading] = $this->extract_all($files);
+        if ($text !== '') {
+            // A pasted list normally has no heading, so parse() would report it as missing.
+            $parsed = reference_parser::parse_list($text);
+            [$references, $heading] = [$parsed['references'], $parsed['heading']];
+        } else {
+            [$references, $heading] = $this->extract_all($files);
+        }
 
         if (!$references) {
             mtrace('  No reference list could be found.');
@@ -126,6 +140,23 @@ class extract_references extends adhoc_task {
 
         job_manager::set_status($job, job_status::CHECKING);
         $this->queue_next(check_references::class, $job);
+    }
+
+    /**
+     * The reference list the student pasted into the submission form, if this assignment asks for
+     * one and they filled it in.
+     *
+     * @param \assign $assign
+     * @param stdClass $submission
+     * @return string Empty when the assignment reads references out of files instead.
+     */
+    protected function submitted_text(\assign $assign, stdClass $submission): string {
+        $plugin = $assign->get_submission_plugin_by_type('refchecker');
+        if (!text_mode::shows_field((string) $plugin->get_config('requiretext'))) {
+            return '';
+        }
+
+        return trim(text_submission::text_for((int) $submission->id));
     }
 
     /**

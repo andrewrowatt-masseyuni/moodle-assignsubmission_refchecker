@@ -265,4 +265,85 @@ final class reference_parser_test extends \advanced_testcase {
         $this->assertArrayHasKey('raw', $parsed['references'][0]);
         $this->assertArrayHasKey('title', $parsed['references'][0]);
     }
+
+    /**
+     * A pasted list with no heading is parsed rather than reported as missing.
+     *
+     * This is the whole point of parse_list(): parse() would answer found => false here, which
+     * would make every text mode submission come back as "no references found".
+     */
+    public function test_parse_list_needs_no_heading(): void {
+        $text = "Braun, V., & Clarke, V. (2006). Using thematic analysis in psychology. "
+            . "Qualitative Research in Psychology, 3(2), 77-101.\n"
+            . "Creswell, J. W. (2014). Research design: Qualitative and quantitative approaches. "
+            . "SAGE Publications.\n";
+
+        $this->assertFalse(reference_parser::parse($text)['found']);
+
+        $parsed = reference_parser::parse_list($text);
+
+        $this->assertTrue($parsed['found']);
+        $this->assertSame('', $parsed['heading']);
+        $this->assertCount(2, $parsed['references']);
+        $this->assertStringContainsString('Braun', $parsed['references'][0]['raw']);
+    }
+
+    /**
+     * A heading pasted along with the list is honoured, so prose above it is discarded.
+     */
+    public function test_parse_list_honours_a_pasted_heading(): void {
+        $text = "Here is my list, hope it is right.\n\nReferences\n\n"
+            . "Braun, V., & Clarke, V. (2006). Using thematic analysis in psychology. "
+            . "Qualitative Research in Psychology, 3(2), 77-101.\n\n"
+            . "Creswell, J. W. (2014). Research design: Qualitative and quantitative approaches. "
+            . "SAGE Publications.\n";
+
+        $parsed = reference_parser::parse_list($text);
+
+        $this->assertTrue($parsed['found']);
+        $this->assertSame('References', $parsed['heading']);
+        $this->assertCount(2, $parsed['references']);
+        foreach ($parsed['references'] as $reference) {
+            $this->assertStringNotContainsString('hope it is right', $reference['raw']);
+        }
+    }
+
+    /**
+     * A numbered pasted list splits on its markers, exactly as an extracted one does.
+     */
+    public function test_parse_list_splits_a_numbered_list(): void {
+        $text = "1. Braun, V., & Clarke, V. (2006). Using thematic analysis in psychology.\n"
+            . "2. Creswell, J. W. (2014). Research design: Qualitative approaches.\n"
+            . "3. Yin, R. K. (2018). Case study research and applications.\n";
+
+        $parsed = reference_parser::parse_list($text);
+
+        $this->assertCount(3, $parsed['references']);
+    }
+
+    /**
+     * Nothing usable pasted in is reported as nothing found.
+     *
+     * @dataProvider unusable_list_provider
+     * @param string $text What the student left in the box.
+     */
+    public function test_parse_list_reports_nothing_usable(string $text): void {
+        $parsed = reference_parser::parse_list($text);
+
+        $this->assertFalse($parsed['found']);
+        $this->assertSame([], $parsed['references']);
+    }
+
+    /**
+     * Data provider for the unusable pasted list test.
+     *
+     * @return array[]
+     */
+    public static function unusable_list_provider(): array {
+        return [
+            'empty' => [''],
+            'whitespace only' => ["  \n\t\n  "],
+            'too short to be a citation' => ["see notes\nn/a"],
+        ];
+    }
 }

@@ -325,7 +325,8 @@ class job_manager {
                 'submission' => $job->submission,
                 'sortorder' => $index,
                 'rawref' => $raw,
-                'sourcefile' => core_text::substr((string) ($reference['sourcefile'] ?? ''), 0, 255),
+                // Null, not '', when there is no source file: a pasted reference list has none.
+                'sourcefile' => core_text::substr((string) ($reference['sourcefile'] ?? ''), 0, 255) ?: null,
                 'refhash' => self::reference_hash($raw),
                 'status' => job_status::REF_QUEUED,
                 'attempts' => 0,

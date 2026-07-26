@@ -19,6 +19,7 @@ namespace assignsubmission_refchecker\event;
 use assign;
 use assignsubmission_refchecker\local\check_timing;
 use assignsubmission_refchecker\local\job_manager;
+use assignsubmission_refchecker\local\text_mode;
 use assignsubmission_refchecker\task\extract_references;
 use core\event\base;
 use core\task\manager;
@@ -76,10 +77,13 @@ class observer {
                 return;
             }
 
-            // Without File submissions there is nothing to read references out of.
-            $fileplugin = $assign->get_submission_plugin_by_type('file');
-            if (!$fileplugin || !$fileplugin->is_enabled() || !$fileplugin->is_visible()) {
-                return;
+            // Without File submissions there is nothing to read references out of, unless the
+            // assignment asks the student to paste their reference list in instead.
+            if (!text_mode::shows_field((string) $plugin->get_config('requiretext'))) {
+                $fileplugin = $assign->get_submission_plugin_by_type('file');
+                if (!$fileplugin || !$fileplugin->is_enabled() || !$fileplugin->is_visible()) {
+                    return;
+                }
             }
 
             $configured = check_timing::sanitise((string) $plugin->get_config('checktiming'));
@@ -121,7 +125,8 @@ class observer {
      * Find the assign_submission record the event refers to.
      *
      * assessable_submitted carries it as objectid; the submission_created and submission_updated
-     * family carry it in other data instead, because their objectid is the subplugin's own row.
+     * family carry it in other data instead, because their objectid is the subplugin's own row
+     * (a file record, or this plugin's pasted reference list).
      *
      * @param base $event
      * @return \stdClass|null

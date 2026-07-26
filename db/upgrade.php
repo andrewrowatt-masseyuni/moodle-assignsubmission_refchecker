@@ -106,5 +106,19 @@ function xmldb_assignsubmission_refchecker_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072504, 'assignsubmission', 'refchecker');
     }
 
+    if ($oldversion < 2026072505) {
+        // Hold the reference list a student pastes in, for assignments that ask for one instead of
+        // reading the bibliography out of the submitted file.
+        $table = new xmldb_table('assignsubmission_refchecker_text');
+        if (!$dbman->table_exists($table)) {
+            $dbman->install_one_table_from_xmldb_file(
+                $CFG->dirroot . '/mod/assign/submission/refchecker/db/install.xml',
+                'assignsubmission_refchecker_text',
+            );
+        }
+
+        upgrade_plugin_savepoint(true, 2026072505, 'assignsubmission', 'refchecker');
+    }
+
     return true;
 }

@@ -23,7 +23,7 @@
  */
 class backup_assignsubmission_refchecker_subplugin extends backup_subplugin {
     /**
-     * Attach the checking job, and its references, to each submission.
+     * Attach the pasted reference list, the checking job and its references to each submission.
      *
      * The plugin owns no file areas and stores no user ids of its own, so there is nothing to
      * annotate: sitting under mod_assign's submission element is enough for a backup without
@@ -34,6 +34,11 @@ class backup_assignsubmission_refchecker_subplugin extends backup_subplugin {
     protected function define_submission_subplugin_structure() {
         $subplugin = $this->get_subplugin_element();
         $subpluginwrapper = new backup_nested_element($this->get_recommended_name());
+
+        // The student's own work, so this matters more than the derived results below it.
+        $text = new backup_nested_element('submission_refchecker_text', ['id'], [
+            'referencetext', 'timecreated', 'timemodified',
+        ]);
 
         $job = new backup_nested_element('submission_refchecker', ['id'], [
             'status', 'generation', 'contenthash', 'totalrefs', 'checkedrefs',
@@ -52,10 +57,15 @@ class backup_assignsubmission_refchecker_subplugin extends backup_subplugin {
         ]);
 
         $subplugin->add_child($subpluginwrapper);
+        $subpluginwrapper->add_child($text);
         $subpluginwrapper->add_child($job);
         $job->add_child($references);
         $references->add_child($reference);
 
+        $text->set_source_table(
+            'assignsubmission_refchecker_text',
+            ['submission' => backup::VAR_PARENTID],
+        );
         $job->set_source_table(
             'assignsubmission_refchecker',
             ['submission' => backup::VAR_PARENTID],

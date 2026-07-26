@@ -199,3 +199,22 @@
         font-weight: 400;
     }
 }
+
+/* The reference list a student pasted in. Preserve their line breaks, but wrap long references
+   rather than letting the block scroll sideways. */
+.assignsubmission_refchecker-submittedtext {
+    margin-bottom: 0;
+    padding: 0.75em;
+    max-height: 24em;
+    overflow-y: auto;
+    background-color: var(--light, #f8f9fa);
+    border-radius: 0.5em;
+    font-family: inherit;
+    font-size: 0.9375rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.assignsubmission_refchecker-submitted {
+    margin-bottom: 1em;
+}

@@ -69,12 +69,14 @@ $string['default'] = 'Enabled by default';
 $string['default_help'] = 'If set, this submission method will be enabled by default for all new assignments.';
 $string['defaultchecktiming'] = 'Default check timing';
 $string['defaultchecktiming_help'] = 'The value new assignments start with for when references are checked.';
+$string['defaultrequiretext'] = 'Default require text references';
+$string['defaultrequiretext_help'] = 'The value new assignments start with for whether students paste their reference list in as text.';
 $string['defaultstudentdisplay'] = 'Default student display';
 $string['defaultstudentdisplay_help'] = 'The value new assignments start with for how much of the result students see.';
 $string['enabled'] = 'Reference Checker';
-$string['enabled_help'] = 'If enabled, the references in files submitted through File submissions are looked up in public academic databases after the student submits. Students and teachers see a progress status, and optionally a summary or a full report.
+$string['enabled_help'] = 'If enabled, a student\'s reference list is looked up in public academic databases after they submit. Students and teachers see a progress status, and optionally a summary or a full report.
 
-This plugin adds no upload of its own. It requires the File submissions type to be enabled.';
+References are read out of the files submitted through File submissions, so that type must also be enabled. Alternatively, set "Require text references" and the student pastes their reference list in as plain text, in which case File submissions is not needed at all.';
 $string['error_abandoned'] = 'Checking was abandoned after repeated failures.';
 $string['error_extractfailed'] = 'The text of this file could not be read.';
 $string['error_noextractabletext'] = 'Almost no text could be read from this file. It may be a scanned image rather than a text document.';
@@ -103,6 +105,7 @@ $string['maxreferences'] = 'Maximum references per submission';
 $string['maxreferences_help'] = 'Checking stops after this many references. Students are told when their list was truncated.';
 $string['nofileplugin'] = 'Reference Checker is enabled but File submissions is not. Nothing will be checked until File submissions is turned on for this assignment.';
 $string['norefs_guidance'] = 'No reference list could be found in the submitted files. This usually means the reference list has no recognisable heading, or the file is a scanned image rather than a text document.';
+$string['norefs_guidance_text'] = 'No references could be recognised in the reference list that was pasted in. Check that each reference is on its own line, or separated from the next by a blank line.';
 $string['notconfigured'] = 'Reference Checker is not fully configured. Ask your site administrator to check the plugin settings.';
 $string['pathtopdftotext'] = 'Path to pdftotext';
 $string['pathtopdftotext_help'] = 'Full path to the pdftotext program, which is part of the poppler-utils package. Without it, PDF submissions cannot be read and only Word and plain text files will be checked.';
@@ -130,6 +133,9 @@ $string['privacy:metadata:refs:rawref'] = 'A single reference, exactly as it app
 $string['privacy:metadata:refs:timechecked'] = 'When this reference was checked.';
 $string['privacy:metadata:semanticscholar'] = 'Reference details are sent to Semantic Scholar to find out whether the work exists and whether the details match.';
 $string['privacy:metadata:semanticscholar:reference'] = 'The title of a single reference from the reference list.';
+$string['privacy:metadata:text'] = 'The reference list a student pasted into the submission form.';
+$string['privacy:metadata:text:referencetext'] = 'The reference list, exactly as the student pasted it in.';
+$string['privacy:metadata:text:timemodified'] = 'When the reference list was last changed.';
 $string['privacy:path'] = 'Reference check';
 $string['privacynotice'] = 'Privacy notice';
 $string['privacynotice_help'] = 'Shown to students alongside the explanatory text. Use it to say where reference data is sent and why.';
@@ -138,6 +144,10 @@ $string['rateinterval_help'] = 'The shortest time, in milliseconds, allowed betw
 
 The defaults follow each service\'s own published guidance. Lowering them risks having the site\'s address throttled or blocked; raising them slows checking down.';
 $string['refchecker:viewfullreport'] = 'View the full reference checking report';
+$string['references'] = 'References';
+$string['references_hint'] = 'Paste in your reference list here.';
+$string['references_required'] = 'Paste in your reference list.';
+$string['references_submitted'] = 'A reference list has been submitted.';
 $string['report_apa'] = 'APA';
 $string['report_authorscore'] = 'Authors';
 $string['report_bibtex'] = 'BibTeX';
@@ -163,6 +173,17 @@ $string['report_submittedref'] = 'Your reference';
 $string['report_titlescore'] = 'Title';
 $string['requesttimeout'] = 'Request timeout';
 $string['requesttimeout_help'] = 'How long to wait for a reply from an external database before giving up on a request.';
+$string['requiretext'] = 'Require text references';
+$string['requiretext_help'] = 'If enabled, students are required to submit their reference list as plain text. This should improve the accuracy of reference detection. If disabled, references will be detected within the submitted file.
+
+* **No** - references are detected within the submitted file.
+* **Yes - Optional** - a References box is shown on the submission form. If the student uses it, that text is checked and the submitted file is not read. If they leave it empty, references are detected within the submitted file.
+* **Yes - Required** - a References box is shown and must be filled in. The submitted file is never read.
+
+In both of the Yes settings, File submissions is optional: the assignment can be set up for the reference checker alone.';
+$string['requiretext_no'] = 'No';
+$string['requiretext_optional'] = 'Yes - Optional';
+$string['requiretext_required'] = 'Yes - Required';
 $string['rerunqueued'] = 'The references will be checked again shortly.';
 $string['retaindays'] = 'Days to keep reference text';
 $string['retaindays_help'] = 'After this many days, the stored copy of each reference is blanked while the result of the check is kept. Set to 0 to keep the reference text indefinitely.';
@@ -198,6 +219,7 @@ $string['studentdisplay_status'] = 'No information (status only)';
 $string['studentdisplay_summary'] = 'Summary';
 $string['studentinformation'] = 'Information for students';
 $string['studentinformation_help'] = 'Shown on the assignment page whenever this plugin is enabled. Leave empty to use the default wording, which explains what the check does and its limits.';
+$string['submittedreferences'] = 'Submitted reference list';
 $string['supportedtypes'] = 'File types to scan';
 $string['supportedtypes_help'] = 'Which submitted file types to read references from. PDF needs pdftotext; Word and OpenDocument formats need the document converter.';
 $string['task_check'] = 'Check submitted references';

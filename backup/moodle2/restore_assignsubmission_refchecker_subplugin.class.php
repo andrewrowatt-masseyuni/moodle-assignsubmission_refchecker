@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Provides the information to restore Reference Checker results
+ * Provides the information to restore Reference Checker submissions and results
  *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>
@@ -40,6 +40,10 @@ class restore_assignsubmission_refchecker_subplugin extends restore_subplugin {
     protected function define_submission_subplugin_structure() {
         return [
             new restore_path_element(
+                $this->get_namefor('text'),
+                $this->get_pathfor('/submission_refchecker_text'),
+            ),
+            new restore_path_element(
                 $this->get_namefor('submission'),
                 $this->get_pathfor('/submission_refchecker'),
             ),
@@ -48,6 +52,25 @@ class restore_assignsubmission_refchecker_subplugin extends restore_subplugin {
                 $this->get_pathfor('/submission_refchecker/references/reference'),
             ),
         ];
+    }
+
+    /**
+     * Restore the reference list a student pasted in.
+     *
+     * @param mixed $data
+     * @return void
+     */
+    public function process_assignsubmission_refchecker_text($data) {
+        global $DB;
+
+        $data = (object) $data;
+        unset($data->id);
+
+        $data->assignment = $this->get_new_parentid('assign');
+        // The mapping is set by the core assign restore when it processes the submission.
+        $data->submission = $this->get_mappingid('submission', $data->submission);
+
+        $DB->insert_record('assignsubmission_refchecker_text', $data);
     }
 
     /**

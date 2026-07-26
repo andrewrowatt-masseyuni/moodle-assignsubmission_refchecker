@@ -40,6 +40,8 @@ class status_summary implements renderable, templatable {
      * @param stdClass|null $job The job record, or null when the submission has never been checked.
      * @param int $level The viewer's effective display level.
      * @param bool $isteacher Whether the viewer may see operational detail such as error codes.
+     * @param bool $textsource Whether the references came from a pasted list rather than a file,
+     *                         which changes what advice is useful when none were recognised.
      */
     public function __construct(
         /** @var stdClass|null The job record. */
@@ -48,6 +50,8 @@ class status_summary implements renderable, templatable {
         protected int $level,
         /** @var bool Whether the viewer may see operational detail. */
         protected bool $isteacher,
+        /** @var bool Whether the references came from a pasted list rather than a file. */
+        protected bool $textsource = false,
     ) {
     }
 
@@ -100,7 +104,10 @@ class status_summary implements renderable, templatable {
             'isfailed' => $status === job_status::FAILED,
             'isnorefs' => $status === job_status::NOREFS,
             'norefsguidance' => $status === job_status::NOREFS
-                ? get_string('norefs_guidance', 'assignsubmission_refchecker')
+                ? get_string(
+                    $this->textsource ? 'norefs_guidance_text' : 'norefs_guidance',
+                    'assignsubmission_refchecker',
+                )
                 : '',
             'showcounts' => $showcounts,
             'counts' => $showcounts ? [

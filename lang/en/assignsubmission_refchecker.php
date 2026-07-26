@@ -53,6 +53,7 @@ $string['contactemail'] = 'Contact email address';
 $string['contactemail_help'] = 'Sent to CrossRef and OpenAlex with every request. Both services give much better rate limits to requests that identify themselves, so setting this is the single most effective thing you can do for throughput. Use a role address rather than a personal one.';
 $string['dashboard_avgcitations'] = 'Average citations';
 $string['dashboard_avgyear'] = 'Average year';
+$string['dashboard_filterby'] = 'Filter by';
 $string['dashboard_heading'] = 'Summary';
 $string['dashboard_mismatch'] = 'Mismatch';
 $string['dashboard_newestyear'] = 'Newest';

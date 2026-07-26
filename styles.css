@@ -70,8 +70,15 @@
 }
 
 .assignsubmission_refchecker-stat-verified,
-.assignsubmission_refchecker-summary-pill-verified {
+.assignsubmission_refchecker-summary-pill-verified,
+.assignsubmission_refchecker-filters [data-filter="verified"] {
     --stat-base-color: var(--success, #357a32);
+}
+
+.assignsubmission_refchecker-stat-partial,
+.assignsubmission_refchecker-summary-pill-partial,
+.assignsubmission_refchecker-filters [data-filter="partial"] {
+    --stat-base-color: #9a6a10;
 }
 
 .assignsubmission_refchecker-statvalue {
@@ -101,20 +108,60 @@
 }
 
 .assignsubmission_refchecker-temporal {
+    margin: 0.75rem 0 0;
+    padding: 6px 4px;
+    border: 1px solid #e4e9ee;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(20, 40, 60, .04);
+
     display: grid;
-    gap: 0 1rem;
-    grid-template-columns: auto auto;
-    justify-content: start;
-    margin-top: 0.75rem;
+    grid-auto-flow: column;              /* Aligns your items side-by-side like a flex row */
+    grid-auto-columns: minmax(0, 1fr);   /* Forces every column to share identical available width */
+    width: fit-content;
 }
 
-.assignsubmission_refchecker-temporal dt {
-    font-weight: 400;
-    opacity: 0.75;
+.assignsubmission_refchecker-temporal-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 8px;
+    text-align: center;
 }
 
-.assignsubmission_refchecker-temporal dd {
-    margin-bottom: 0;
+.assignsubmission_refchecker-temporal-stat + .assignsubmission_refchecker-temporal-stat {
+    border-left: 1px solid #eaeff3;
+}
+
+.assignsubmission_refchecker-temporal-stat dt {
+    order: 1;                 /* label on top */
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #8794a0;
+    white-space: nowrap;
+}
+
+.assignsubmission_refchecker-temporal-stat dd {
+    order: 2;
+    margin: 0;
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1;
+    color: #2f3a44;
+}
+
+.assignsubmission_refchecker-temporal-stat-accent {
+    background: rgb(from var(--stat-base-color) r g b / 0.05);
+    border-radius: 8px;
+    border-left: none;
+}
+
+.assignsubmission_refchecker-temporal-stat-accent + .assignsubmission_refchecker-temporal-stat {
+    border-left: none;
 }
 
 /* Filter bar and reference cards. */
@@ -217,4 +264,83 @@
 
 .assignsubmission_refchecker-submitted {
     margin-bottom: 1em;
+}
+
+.assignsubmission_refchecker-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0.75rem 0;
+}
+
+/* base pill — overrides Bootstrap's .btn-sm look */
+.assignsubmission_refchecker-filters .btn.btn-sm.btn-outline-secondary,
+.assignsubmission_refchecker-filters .btn.btn-sm.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 8px;
+
+    color: var(--stat-base-color);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: none;
+
+    background-color: white;
+    border: 1px solid rgb(from var(--stat-base-color) r g b / 0.25);
+}
+
+/* status dot before the label */
+.assignsubmission_refchecker-filters .btn::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--stat-base-color);
+    flex: none;
+}
+
+/* "All" has no dot */
+.assignsubmission_refchecker-filters [data-filter="all"]::before {
+    display: none;
+}
+
+.assignsubmission_refchecker-filters .btn:hover {
+    border-color: #b9c2ca;
+    background: #f7f9fb;
+}
+
+/* active filter — filled blue, keyed off aria-pressed */
+.assignsubmission_refchecker-filters [aria-pressed="true"] {
+    background: var(--stat-base-color);
+    border-color: var(--stat-base-color);
+    color: #fff;
+}
+.assignsubmission_refchecker-filters [aria-pressed="true"]::before {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.assignsubmission_refchecker-filters-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background-color: rgb(from var(--stat-base-color) r g b / 0.05);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.assignsubmission_refchecker-filterby {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-right: 2px;
+    font-size: 13px;
+    font-weight: 500;
 }

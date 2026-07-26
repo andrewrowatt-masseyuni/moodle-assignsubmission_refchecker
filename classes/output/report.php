@@ -172,15 +172,15 @@ class report implements renderable, templatable {
             ['key' => 'all', 'label' => get_string('filter_all', 'assignsubmission_refchecker'),
                 'count' => (int) $job->totalrefs, 'active' => true],
             ['key' => match_status::VERIFIED, 'label' => get_string('filter_verified', 'assignsubmission_refchecker'),
-                'count' => (int) $job->verifiedrefs, 'active' => false],
+                'count' => (int) $job->verifiedrefs, 'active' => false, 'disabled' => (int) $job->verifiedrefs === 0],
             ['key' => match_status::PARTIAL, 'label' => get_string('filter_partial', 'assignsubmission_refchecker'),
-                'count' => (int) $job->partialrefs, 'active' => false],
+                'count' => (int) $job->partialrefs, 'active' => false, 'disabled' => (int) $job->partialrefs === 0],
             ['key' => match_status::MISMATCH, 'label' => get_string('filter_mismatch', 'assignsubmission_refchecker'),
-                'count' => (int) $job->mismatchrefs, 'active' => false],
+                'count' => (int) $job->mismatchrefs, 'active' => false, 'disabled' => (int) $job->mismatchrefs === 0],
             ['key' => match_status::NOTFOUND, 'label' => get_string('filter_notfound', 'assignsubmission_refchecker'),
-                'count' => (int) $job->notfoundrefs, 'active' => false],
+                'count' => (int) $job->notfoundrefs, 'active' => false, 'disabled' => (int) $job->notfoundrefs === 0],
             ['key' => 'issues', 'label' => get_string('filter_issues', 'assignsubmission_refchecker'),
-                'count' => (int) $job->issuerefs, 'active' => false],
+                'count' => (int) $job->issuerefs, 'active' => false, 'disabled' => (int) $job->issuerefs === 0],
         ];
     }
 

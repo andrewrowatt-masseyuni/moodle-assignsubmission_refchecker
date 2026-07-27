@@ -107,8 +107,8 @@ jobs:
         run: moodle-plugin-ci phpunit --fail-on-warning
 
       - name: PHPUnit tests - Core privacy (AJR)
-        if: ${{ !cancelled() && matrix.moodle-branch < 'MOODLE_501_STABLE' }}
-        run: moodle/vendor/bin/phpunit moodle/privacy/tests/privacy/provider_test.php
+        if: ${{ !cancelled() }}
+        run: moodle/vendor/bin/phpunit --configuration moodle/phpunit.xml moodle/privacy/tests/privacy/provider_test.php
 
       - name: Behat features
         id: behat

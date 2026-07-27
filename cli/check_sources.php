@@ -27,6 +27,7 @@ define('CLI_SCRIPT', true);
 require(__DIR__ . '/../../../../../config.php');
 require_once($CFG->libdir . '/clilib.php');
 
+use assignsubmission_refchecker\local\docx_converter;
 use assignsubmission_refchecker\local\extractor;
 use assignsubmission_refchecker\local\reference_parser;
 use assignsubmission_refchecker\local\source\chain;
@@ -76,6 +77,15 @@ $pdfstate = ($pdftotext !== '' && is_executable($pdftotext)) ? 'OK' : 'NOT USABL
 cli_writeln('  pdftotext      : ' . ($pdftotext !== '' ? $pdftotext : '(not set)') . "  [{$pdfstate}]");
 
 cli_writeln('  File types     : ' . implode(', ', extractor::supported_types()));
+
+if (!get_config('assignsubmission_refchecker', 'usebuiltinconverter')) {
+    $builtinstate = 'disabled';
+} else if (docx_converter::is_available()) {
+    $builtinstate = 'enabled';
+} else {
+    $builtinstate = 'enabled but UNUSABLE (needs ext-zip; .docx will fall back)';
+}
+cli_writeln('  Built-in docx  : ' . $builtinstate);
 
 // Whether the converter can actually produce text depends on the remote LibreOffice server's
 // advertised formats, which needs a real file to ask about, so only the setting is reported here.

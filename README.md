@@ -36,8 +36,11 @@ cited. Teachers get a per-reference report alongside the submission when grading
 - Cron running regularly — all checking happens in scheduled and adhoc tasks
 - Outbound HTTPS access to the enabled bibliographic databases
 - **Optional:** `pdftotext` (poppler-utils) for PDF submissions
-- **Optional:** Moodle's document converter (normally LibreOffice) for DOCX, DOC, ODT and RTF
-  submissions
+- **Optional:** Moodle's document converter (normally LibreOffice) for DOC, ODT and RTF
+  submissions, and for DOCX where the bundled converter is turned off
+
+DOCX needs nothing installed: it is read by a bundled library that runs on the same PHP 8.1+ and
+`ext-zip` Moodle itself requires.
 
 By default the plugin reads the files submitted through the **File submissions** plugin, so that
 plugin normally needs to be enabled on the assignment too. The exception is when **Require text
@@ -71,7 +74,11 @@ plugins > Reference Checker**:
 ### Text extraction
 
 - **Path to pdftotext** - Default `/usr/bin/pdftotext`.
-- **Use LibreOffice** - Convert Word, ODT and RTF submissions via Moodle's document converter.
+- **Use the built-in document converter** - Read `.docx` with the bundled
+  [elephant-php](https://github.com/endless-creativity/elephant-php) library, which needs nothing
+  installed on the server. On by default, and takes priority over the site's document converter.
+- **Use the document converter** - Convert Word, ODT and RTF submissions via Moodle's document
+  converter. Still the only route for `.doc`, `.odt` and `.rtf`.
 - **Supported file types** - Default PDF, DOCX, ODT, RTF, TXT.
 - **Maximum file size** - Default 20 MB.
 
@@ -142,8 +149,9 @@ submission.
 ## Diagnostics
 
 A system status check is registered under **Site administration > Reports > System status**. It warns
-about a missing contact email, a missing or non-executable `pdftotext`, no sources enabled, Semantic
-Scholar enabled without an API key, and any enabled source that fails its availability probe.
+about a missing contact email, a missing or non-executable `pdftotext`, the built-in DOCX converter
+being enabled on a server that cannot run it, no sources enabled, Semantic Scholar enabled without
+an API key, and any enabled source that fails its availability probe.
 
 A CLI probe checks configuration and reachability, and resolves a single reference end to end:
 

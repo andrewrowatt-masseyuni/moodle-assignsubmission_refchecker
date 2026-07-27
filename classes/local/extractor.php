@@ -24,15 +24,18 @@ use stored_file;
 /**
  * Turns a submitted file into plain text.
  *
- * Two routes, chosen by file type:
+ * Three routes, chosen by file type:
  *
  * - PDF goes through pdftotext, because it is a genuine text extractor. LibreOffice imports PDF
  *   through Draw and reconstructs the page as positioned text boxes, which mangles the line order
  *   of a reference list, so it is deliberately not used here.
- * - Word, OpenDocument and RTF go through Moodle's document converter, which reuses infrastructure
+ * - DOCX goes through the bundled converter first, which needs nothing installed, and falls back
+ *   to Moodle's document converter when that is turned off or cannot read the file.
+ * - DOC, OpenDocument and RTF go through Moodle's document converter, which reuses infrastructure
  *   the site already runs and covers more formats than any library we could bundle.
  *
- * Both routes are optional. A site with neither still checks plain text submissions.
+ * Every route but the bundled one is optional. A site with none of them still checks plain text
+ * submissions.
  *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>
@@ -79,6 +82,7 @@ class extractor {
         try {
             $text = match ($extension) {
                 'pdf' => self::extract_pdf($file),
+                'docx' => self::extract_docx($file),
                 'txt' => $file->get_content(),
                 default => self::extract_via_converter($file),
             };
@@ -179,6 +183,27 @@ class extractor {
         }
 
         return (string) file_get_contents($target);
+    }
+
+    /**
+     * Extract text from a .docx, preferring the bundled converter.
+     *
+     * The two routes are complementary rather than redundant: the bundled one needs nothing
+     * installed but reads only OOXML, while LibreOffice reads almost anything but may not be
+     * there. Trying both in this order means a site gets docx support from whichever it has.
+     *
+     * @param stored_file $file
+     * @return string|null Null when neither route could handle it.
+     */
+    protected static function extract_docx(stored_file $file): ?string {
+        if (docx_converter::is_enabled()) {
+            $text = docx_converter::extract($file);
+            if ($text !== null) {
+                return $text;
+            }
+        }
+
+        return self::extract_via_converter($file);
     }
 
     /**

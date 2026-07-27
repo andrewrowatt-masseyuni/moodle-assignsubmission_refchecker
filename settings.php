@@ -112,6 +112,14 @@ $settings->add(new admin_setting_configexecutable(
     '/usr/bin/pdftotext'
 ));
 
+// Listed above the site converter because that is the order the two are tried in.
+$settings->add(new admin_setting_configcheckbox(
+    'assignsubmission_refchecker/usebuiltinconverter',
+    new lang_string('usebuiltinconverter', 'assignsubmission_refchecker'),
+    new lang_string('usebuiltinconverter_help', 'assignsubmission_refchecker'),
+    1
+));
+
 $settings->add(new admin_setting_configcheckbox(
     'assignsubmission_refchecker/uselibreoffice',
     new lang_string('uselibreoffice', 'assignsubmission_refchecker'),

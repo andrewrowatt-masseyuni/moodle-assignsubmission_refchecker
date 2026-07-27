@@ -16,6 +16,7 @@
 
 namespace assignsubmission_refchecker\check;
 
+use assignsubmission_refchecker\local\docx_converter;
 use assignsubmission_refchecker\local\extractor;
 use assignsubmission_refchecker\local\source\chain;
 use assignsubmission_refchecker\local\source\semanticscholar;
@@ -83,6 +84,16 @@ class sources extends check {
             $problems[] = get_string('check_nopdftotext', 'assignsubmission_refchecker');
         } else {
             $details[] = get_string('check_pdftotextfound', 'assignsubmission_refchecker', $pdftotext);
+        }
+
+        // Not a failure on its own — docx falls back to the site's converter — but an
+        // administrator who ticked the setting should be told why nothing changed.
+        if (get_config('assignsubmission_refchecker', 'usebuiltinconverter')) {
+            if (docx_converter::is_available()) {
+                $details[] = get_string('check_builtinconverter', 'assignsubmission_refchecker');
+            } else {
+                $problems[] = get_string('check_builtinconverterunavailable', 'assignsubmission_refchecker');
+            }
         }
 
         $chain = chain::from_config();

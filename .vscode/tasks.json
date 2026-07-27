@@ -143,6 +143,7 @@
                 "phpcbf",
                 "phpcs",
                 "PHPDoc checker",
+                "grunt amd",
                 "grunt yui",
                 "grunt stylelint",
                 "grunt gherkinlint",

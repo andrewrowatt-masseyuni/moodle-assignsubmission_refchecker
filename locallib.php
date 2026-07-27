@@ -284,7 +284,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
             ? text_submission::text_for((int) $submission->id)
             : '';
 
-        // core_form/element-textarea already carries form-control, which is what makes the box fill
+        // Core core_form/element-textarea already carries form-control, which is what makes the box fill
         // its column, so no class is passed here: the template hardcodes its own class attribute
         // and a second one would simply be ignored.
         $mform->addElement(

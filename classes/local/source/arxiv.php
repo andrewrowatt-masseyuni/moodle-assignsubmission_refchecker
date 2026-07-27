@@ -271,7 +271,9 @@ class arxiv extends http_source {
     }
 
     /**
-     * @inheritDoc
+     * The brand color for the source.
+     *
+     * @return string
      */
     public function get_brand_color(): string {
         return '#AA142D';

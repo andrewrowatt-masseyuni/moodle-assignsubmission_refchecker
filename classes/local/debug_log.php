@@ -87,7 +87,7 @@ class debug_log {
      * Record one thing that happened.
      *
      * @param string $event A dotted event name, e.g. "http.response". Kept short and greppable.
-     * @param array<string, mixed> $context Values to record alongside it.
+     * @param array $context Values to record alongside it.
      * @return void
      */
     public static function log(string $event, array $context = []): void {
@@ -114,7 +114,7 @@ class debug_log {
      * Build one log line.
      *
      * @param string $event
-     * @param array<string, mixed> $context
+     * @param array $context
      * @return string
      */
     protected static function format(string $event, array $context): string {

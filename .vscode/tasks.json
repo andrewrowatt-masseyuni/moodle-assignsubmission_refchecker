@@ -100,13 +100,13 @@
         {
             "label": "PHPDoc checker",
             "type": "shell",
-            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php local/moodlecheck/cli/moodlecheck.php -p=mod/assign/submission/refchecker -f=text | tee /dev/stderr | grep -vz error",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php local/moodlecheck/cli/moodlecheck.php -e=mod/assign/submission/refchecker/thirdparty -p=mod/assign/submission/refchecker -f=text | tee /dev/stderr | grep -vz error",
             "group": "test"
         },
         {
             "label": "Run phpunit",
             "type": "shell",
-            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver vendor/bin/phpunit mod/assign/submission/refchecker/tests/. --test-suffix=_test.php 2>&1 | tee /dev/tty | grep -q 'Moodle PHPUnit environment was initialised for different version' && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/tool/phpunit/cli/init.php && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver vendor/bin/phpunit mod/assign/submission/refchecker/tests/. --test-suffix=_test.php",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver vendor/bin/phpunit mod/assign/submission/refchecker/tests/. --test-suffix=_test.php",
             "group": "test",
             "presentation": {
                 "panel": "dedicated"
@@ -126,7 +126,7 @@
         {
             "label": "Run behat tests",
             "type": "shell",
-            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec -u www-data webserver php admin/tool/behat/cli/run.php --tags=@assignsubmission_refchecker --format progress --format moodle_screenshot 2>&1 | tee /dev/tty | grep -q 'behat test site is outdated' && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/tool/behat/cli/init.php && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec -u www-data webserver php admin/tool/behat/cli/run.php --tags=@assignsubmission_refchecker --format progress --format moodle_screenshot",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec -u www-data webserver php admin/tool/behat/cli/run.php --tags=@assignsubmission_refchecker --format progress --format moodle_screenshot",
             "group": "test",
             "presentation": {
                 "panel": "dedicated"

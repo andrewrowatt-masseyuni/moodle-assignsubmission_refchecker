@@ -236,9 +236,11 @@ class dblp extends http_source {
     protected function availability_url(): string {
         return $this->url(self::ENDPOINT, ['q' => 'test', 'format' => 'json', 'h' => 1]);
     }
-    
+
     /**
-     * @inheritDoc
+     * The brand color for the source.
+     *
+     * @return string
      */
     public function get_brand_color(): string {
         return '#196CA3';

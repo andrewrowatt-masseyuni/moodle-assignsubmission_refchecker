@@ -46,6 +46,7 @@ Feature: Downloading the reference check report
     And I set the field "Show students" to "Full report"
     And I press "Save and display"
     When I am on the "Essay" Activity page logged in as student1
+    And I press "View full"
     Then I should see "Download"
     And following "CSV" should download between "50" and "5000000" bytes
 
@@ -56,4 +57,5 @@ Feature: Downloading the reference check report
     And I set the field "Show students" to "Summary"
     And I press "Save and display"
     When I am on the "Essay" Activity page logged in as student1
+    And I press "View full"
     Then I should not see "Download"

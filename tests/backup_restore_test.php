@@ -62,7 +62,7 @@ final class backup_restore_test extends \advanced_testcase {
 
         $assign = $this->create_instance($course, [
             'assignsubmission_file_enabled' => 1,
-            // save_settings() on the file plugin reads both of these straight off the form
+            // Function save_settings() on the file plugin reads both of these straight off the form
             // data, so enabling it without them is an undefined property warning, which
             // PHPUnit turns into a failure before the test body ever runs.
             'assignsubmission_file_maxfiles' => 1,

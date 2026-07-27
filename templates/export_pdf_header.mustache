@@ -94,22 +94,22 @@
 }}
 <h1 style="font-size: 16pt; font-weight: bold;">{{heading}}</h1>
 
-<table cellpadding="2">
-    <tr>
+<table>
+    <tr style="line-height: 16pt;">
         <td style="width: 25%; font-weight: bold;">{{assignmentlabel}}</td>
         <td style="width: 75%;">{{assignment}}</td>
     </tr>
-    <tr>
+    <tr style="line-height: 16pt;">
         <td style="width: 25%; font-weight: bold;">{{subjectlabel}}</td>
         <td style="width: 75%;">{{subject}}</td>
     </tr>
     {{#checked}}
-        <tr>
+        <tr style="line-height: 16pt;">
             <td style="width: 25%; font-weight: bold;">{{checkedlabel}}</td>
             <td style="width: 75%;">{{checked}}</td>
         </tr>
     {{/checked}}
-    <tr>
+    <tr style="line-height: 16pt;">
         <td style="width: 25%; font-weight: bold;">{{downloadedlabel}}</td>
         <td style="width: 75%;">{{downloaded}}</td>
     </tr>
@@ -127,13 +127,13 @@
     <p style="font-size: 8pt; color: #997404;">{{truncatednotice}}</p>
 {{/istruncated}}
 
-<table cellpadding="4">
-    <tr>
+<table>
+    <tr style="line-height: 24pt;">
         {{#stats}}
             <td style="width: 16%; text-align: center; border: 0.5px solid #adb5bd; background-color: #f1f3f5; font-size: 8pt;">{{label}}</td>
         {{/stats}}
     </tr>
-    <tr>
+    <tr style="line-height: 24pt;">
         {{#stats}}
             <td style="width: 16%; text-align: center; border: 0.5px solid #adb5bd; font-size: 12pt; font-weight: bold;">{{value}}</td>
         {{/stats}}
@@ -149,13 +149,13 @@
 {{/haspredatory}}
 
 {{#hastemporal}}
-    <table cellpadding="2">
-        <tr>
+    <table>
+        <tr style="line-height: 16pt;">
             {{#temporal}}
                 <td style="width: 20%; font-size: 8pt; color: #5c636a;">{{label}}</td>
             {{/temporal}}
         </tr>
-        <tr>
+        <tr style="line-height: 24pt;">
             {{#temporal}}
                 <td style="width: 20%; font-size: 9pt;">{{value}}</td>
             {{/temporal}}

@@ -86,9 +86,15 @@
     {{/hasconfidence}}
 </p>
 
-<table cellpadding="4">
+<table>
     <tr>
-        <td style="width: 100%; border: 0.5px solid #adb5bd; background-color: #f8f9fa; font-size: 9pt;">{{rawref}}</td>
+        <td style="width: 100%; border: 0.5px solid #adb5bd; background-color: #f8f9fa; font-size: 9pt;">
+            <table>
+                <tr style="line-height: 4pt;"><td></td></tr>
+                <tr><td>{{rawref}}</td></tr>
+                <tr style="line-height: 4pt;"><td></td></tr>
+            </table>
+        </td>
     </tr>
 </table>
 
@@ -105,9 +111,9 @@
 {{/haserror}}
 
 {{#hasdetails}}
-    <table cellpadding="2">
+    <table>
         {{#details}}
-            <tr>
+            <tr style="line-height: 16pt;">
                 <td style="width: 22%; font-size: 9pt; color: #5c636a;">{{label}}</td>
                 <td style="width: 78%; font-size: 9pt;">{{value}}</td>
             </tr>

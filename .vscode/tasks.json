@@ -145,6 +145,7 @@
                 "PHPDoc checker",
                 "grunt yui",
                 "grunt stylelint",
+                "grunt gherkinlint",
                 "Run phpunit",
                 "Run behat tests",
                 "Run phpunit - privacy"

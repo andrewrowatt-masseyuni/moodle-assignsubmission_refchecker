@@ -27,7 +27,7 @@ Feature: Downloading the reference check report
       | Essay  | student1 | Smith, J. (2019). Learning at scale. Journal of Things, 1, 1-15. | verified    |
       | Essay  | student1 | Jones, P. (2021). A fabricated title. Nowhere Journal, 2, 1-9.   | notfound    |
     And I change the window size to "large"
-    
+
   @javascript
   Scenario: A teacher can download the report in each format
     Given I am on the "Essay" Activity page logged in as teacher1

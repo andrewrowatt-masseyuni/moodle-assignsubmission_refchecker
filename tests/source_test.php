@@ -809,18 +809,21 @@ final class source_test extends \advanced_testcase {
      * database. This matters because degraded results are kept out of the shared cache.
      */
     public function test_a_positive_match_is_not_degraded(): void {
-        set_config('sources', 'dblp,crossref', 'assignsubmission_refchecker');
+        // The chain asks in the registry's order whatever order the setting names, so the database
+        // that is down has to be the earlier of the two: a match this good stops the chain where it
+        // stands, and a source asked after that is never reached to be unavailable.
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
 
         $this->mock_responses([
             new Response(500, [], ''),
-            new Response(200, [], self::crossref_body()),
+            new Response(200, [], self::dblp_body()),
         ]);
 
         $result = chain::from_config()->check(self::reference());
 
         $this->assertSame(match_status::VERIFIED, $result['matchstatus']);
         $this->assertFalse($result['degraded']);
-        $this->assertSame(['dblp'], $result['unavailable']);
+        $this->assertSame(['crossref'], $result['unavailable']);
     }
 
     /**

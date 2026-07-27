@@ -205,8 +205,9 @@ class chain {
      * @param array $reference Parsed reference: raw, title, authors, journal, year, doi.
      * @return array The outcome, always populated. Keys: matchstatus, confidence, titlescore,
      *     authorscore, journalscore, issues, source, record (or null).
-     * @throws transient_exception When every source failed in a way worth retrying, including
-     *      when every one of them refused.
+     * @throws service_refused_exception When nothing answered and the sources that did not were
+     *      refusing or standing down, rather than unreachable.
+     * @throws transient_exception When every source failed in a way worth retrying.
      * @throws rate_limited_exception When our own pacer declined to send a request at all.
      */
     public function check(array $reference): array {
@@ -219,12 +220,23 @@ class chain {
             // A source that has been failing repeatedly is stood down for a few minutes rather
             // than asked once per reference while it is unwell.
             if (circuit_breaker::is_open($source->get_name())) {
+                $remaining = circuit_breaker::remaining($source->get_name());
                 debug_log::log('source.skipped', [
                     'source' => $source->get_name(),
                     'reason' => 'standdown',
-                    'remaining' => circuit_breaker::remaining($source->get_name()),
+                    'remaining' => $remaining,
                 ]);
                 $unavailable[] = $source->get_name();
+                // A source we chose not to ask is not evidence that the databases are unreachable:
+                // it declined to serve us earlier and is sitting out the stand-down we gave it. Say
+                // so, so that a chain left with nothing but stood down sources settles the
+                // reference against its attempt budget instead of backing the whole task off and
+                // retrying into the same stand-down. Never in place of a live failure from this
+                // run, which is the better account of why nothing answered.
+                $transient ??= new service_refused_exception(
+                    $source->get_name() . ' is standing down for a further ' . $remaining . 's',
+                    $remaining,
+                );
                 continue;
             }
 

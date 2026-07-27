@@ -19,6 +19,7 @@ namespace assignsubmission_refchecker\task;
 use assignsubmission_refchecker\local\debug_log;
 use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
+use assignsubmission_refchecker\local\exception\service_refused_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
@@ -76,6 +77,11 @@ class check_references extends adhoc_task {
 
     /**
      * Check the next batch of references.
+     *
+     * A transient failure is allowed to propagate: that is how Moodle's task API is told to retry
+     * this batch with a backoff, which is the right response to every database being down at once.
+     * Whatever the batch managed to record before that point stays recorded, so the retry resumes
+     * rather than starting the submission over.
      *
      * @return void
      */
@@ -206,20 +212,22 @@ class check_references extends adhoc_task {
     /**
      * Check a single reference and record the outcome.
      *
-     * No failure here is allowed to bring the task down. One reference that cannot be resolved,
-     * for whatever reason, must not stall the ones queued behind it, and a database being briefly
-     * unwell must not be able to mark a whole submission as failed. Everything is instead recorded
-     * against the reference itself, where the attempt budget bounds how long it can go on.
+     * Most failures are recorded against the reference itself, where the attempt budget bounds how
+     * long they can go on. One reference that cannot be resolved must not stall the ones queued
+     * behind it, and a database being briefly unwell must not be able to mark a whole submission as
+     * failed. That covers a database refusing the request as much as a bad record: where other
+     * sources are configured the chain answers from those instead, and where the refused one was
+     * the only source the refusal reaches this method and is recorded like any other.
      *
-     * The pacer declining to send anything is the one exception, and propagates: no request was
-     * made, so it says nothing about this reference and applies equally to every reference queued
-     * behind it. A database refusing a request is not that, and does not come this far: the chain
-     * stands that source down and answers from the ones that did reply.
+     * The two failures that say nothing about this reference propagate instead, because no search
+     * actually happened and the references behind it face the same conditions: the pacer declining
+     * to release a slot, and every database in the chain being unreachable at once.
      *
      * @param chain $chain
      * @param stdClass $reference
      * @return void
      * @throws rate_limited_exception When the pacer would not release a slot.
+     * @throws transient_exception When no database in the chain could be reached.
      */
     protected function check_one(chain $chain, stdClass $reference): void {
         $parsed = array_merge(
@@ -253,13 +261,31 @@ class check_references extends adhoc_task {
             $this->log_reference_failure($reference, 'permanent', $e->getMessage());
             job_manager::record_reference_failure($reference, $e->getMessage());
             return;
-        } catch (transient_exception $e) {
-            // Every database was unreachable, so nothing was actually searched. Put the reference
-            // back in the queue rather than throwing: failing the task would stall the references
-            // behind it too, and the attempt budget already stops this going on forever.
-            $this->log_reference_failure($reference, 'transient', $e->getMessage());
+        } catch (service_refused_exception $e) {
+            // Must come before the transient catch, for the same reason the pacer does: this is a
+            // subclass too, and letting it fall through would turn one database having a bad
+            // afternoon into a task the API keeps retrying with a backoff.
+            //
+            // A 429 from these services is not reliably about our request rate, so it is treated as
+            // that source being unwell and recorded against the reference like any other source
+            // failure, where the attempt budget bounds it. The chain has already stood the source
+            // down, so the references behind this one skip it rather than asking again.
+            $this->log_reference_failure($reference, 'refused', $e->getMessage());
             job_manager::record_reference_failure($reference, $e->getMessage());
             return;
+        } catch (transient_exception $e) {
+            // Every database was unreachable, so nothing was actually searched. Hand it to the task
+            // API for its backoff rather than recording it against the reference: an outage that
+            // spent an attempt each run would, after three, have the student told their reference
+            // was not found on the strength of searches that never happened. The references queued
+            // behind this one would have fared no better against the same dead services, so
+            // stalling them costs nothing, and the retry resumes from what is already recorded.
+            debug_log::log('reference.unavailable', [
+                'refid' => (int) $reference->id,
+                'attempt' => (int) $reference->attempts + 1,
+                'reason' => $e->getMessage(),
+            ]);
+            throw $e;
         }
 
         if (!empty($result['degraded'])) {

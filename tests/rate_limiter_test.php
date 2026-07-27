@@ -56,14 +56,19 @@ final class rate_limiter_test extends \advanced_testcase {
     public function test_second_request_is_deferred(): void {
         global $DB;
 
-        rate_limiter::throttle('dblp', 1000);
+        // Long on both calls, so that the second reschedules rather than sleeping through the
+        // test. The wait a caller inherits is the slot the call before it booked, so pacing the
+        // first a second apart would leave the second one second behind however long an interval
+        // it asked for itself, which is under the threshold and slept through inline.
+        $interval = 60000;
+
+        rate_limiter::throttle('dblp', $interval);
 
         $before = (int) $DB->get_field(rate_limiter::TABLE, 'nextallowedms', ['source' => 'dblp']);
         $this->assertGreaterThan(0, $before);
 
-        // A long interval so the second call reschedules rather than sleeping through the test.
         try {
-            rate_limiter::throttle('dblp', 60000);
+            rate_limiter::throttle('dblp', $interval);
             $this->fail('Expected the second request to be deferred.');
         } catch (rate_limited_exception $e) {
             $this->assertGreaterThan(0, $e->get_retry_after());

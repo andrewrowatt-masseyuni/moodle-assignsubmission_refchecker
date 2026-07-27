@@ -413,7 +413,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
      * @return string
      */
     public function view_header() {
-        global $OUTPUT;
+        $output = $this->assignment->get_renderer();
 
         $context = $this->assignment->get_context();
         $isteacher = $this->viewer_is_teacher();
@@ -439,7 +439,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
             && !$this->file_plugin_available()
             && !text_mode::shows_field($this->text_mode());
 
-        return $OUTPUT->render_from_template('assignsubmission_refchecker/view_header', [
+        return $output->render_from_template('assignsubmission_refchecker/view_header', [
             'information' => $information,
             // Students are told what they personally will see. Teachers get the equivalent
             // statement about their students instead.
@@ -471,7 +471,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
      * @return string
      */
     public function view_summary(stdClass $submission, &$showviewlink) {
-        global $OUTPUT;
+        $output = $this->assignment->get_renderer();
 
         $showviewlink = false;
 
@@ -486,7 +486,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
             if ($this->has_submitted_text($submission)) {
                 $showviewlink = true;
 
-                return $OUTPUT->container(
+                return $output->container(
                     get_string('references_submitted', 'assignsubmission_refchecker'),
                     'assignsubmission_refchecker-status',
                 );
@@ -503,9 +503,9 @@ class assign_submission_refchecker extends assign_submission_plugin {
             && in_array($job->status, [job_status::CHECKING, job_status::COMPLETE], true))
             || $this->has_submitted_text($submission);
 
-        return $OUTPUT->render_from_template(
+        return $output->render_from_template(
             'assignsubmission_refchecker/status',
-            $summary->export_for_template($OUTPUT),
+            $summary->export_for_template($output),
         );
     }
 
@@ -521,7 +521,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
      * @return string
      */
     public function view(stdClass $submission) {
-        global $OUTPUT;
+        $output = $this->assignment->get_renderer();
 
         // The student's own reference list, shown whatever the display level: that setting governs
         // how much of the *result* a student may see, and this is their own submitted work.
@@ -531,7 +531,7 @@ class assign_submission_refchecker extends assign_submission_plugin {
             ? text_submission::text_for_submission($submission)
             : '';
         if (trim($text) !== '') {
-            $prefix = $OUTPUT->render_from_template(
+            $prefix = $output->render_from_template(
                 'assignsubmission_refchecker/submitted_text',
                 ['text' => $text],
             );
@@ -551,9 +551,9 @@ class assign_submission_refchecker extends assign_submission_plugin {
             if (!$summary->has_content()) {
                 return $prefix;
             }
-            return $prefix . $OUTPUT->render_from_template(
+            return $prefix . $output->render_from_template(
                 'assignsubmission_refchecker/status',
-                $summary->export_for_template($OUTPUT),
+                $summary->export_for_template($output),
             );
         }
 
@@ -570,9 +570,9 @@ class assign_submission_refchecker extends assign_submission_plugin {
             has_capability('mod/assign:grade', $this->assignment->get_context()),
         );
 
-        return $OUTPUT->render_from_template(
+        return $prefix . $output->render_from_template(
             'assignsubmission_refchecker/report',
-            $report->export_for_template($OUTPUT),
+            $report->export_for_template($output),
         );
     }
 

@@ -101,11 +101,22 @@ final class task_test extends \advanced_testcase {
     /**
      * Attach a plain text file containing a reference list to the submission.
      *
+     * The body is padded out because extractor::extract() reports anything shorter than
+     * MIN_USEFUL_CHARS as having no text layer, the way a scanned PDF does. A real essay is
+     * comfortably over that; a one line stand-in is not, and every reference count below five
+     * would otherwise be skipped before the parser ever saw it.
+     *
      * @param int $references How many references to write.
      * @return void
      */
     private function attach_submission_file(int $references = 3): void {
-        $lines = ["An essay about things.", "", "References", ""];
+        $body = str_repeat(
+            'This paragraph stands in for the body of the essay, which the parser steps over on '
+            . 'its way to the reference list. ',
+            5,
+        );
+
+        $lines = [$body, "", "References", ""];
         for ($i = 1; $i <= $references; $i++) {
             $lines[] = "Author{$i}, A. (201{$i}). The study of subject number {$i} in context. "
                 . "Journal of Things, {$i}(1), 1-10.";
@@ -215,16 +226,22 @@ final class task_test extends \advanced_testcase {
     /**
      * A CrossRef response that matches whatever it is asked about.
      *
+     * The author and year track the numbered reference the title belongs to. Answering for
+     * reference 2 in reference 1's name is not a match the plugin should accept: the matcher
+     * scores the author surname, so it would come back partial rather than verified.
+     *
      * @param string $title
      * @return Response
      */
     private static function crossref_hit(string $title): Response {
+        $n = preg_match('/number (\d+)/', $title, $matches) ? (int) $matches[1] : 1;
+
         return new Response(200, [], json_encode(['message' => ['items' => [[
             'DOI' => '10.5555/' . md5($title),
             'title' => [$title],
-            'author' => [['given' => 'A', 'family' => 'Author1']],
+            'author' => [['given' => 'A', 'family' => 'Author' . $n]],
             'container-title' => ['Journal of Things'],
-            'issued' => ['date-parts' => [[2011]]],
+            'issued' => ['date-parts' => [[2010 + $n]]],
             'is-referenced-by-count' => 5,
         ]]]]));
     }
@@ -416,6 +433,9 @@ final class task_test extends \advanced_testcase {
             self::crossref_hit('The study of subject number 2 in context'),
         ]);
         $this->run_task($this->task(extract_references::class, $job));
+        // The chunk that empties the queue still requeues; the run after it is the one that finds
+        // nothing outstanding and closes the job.
+        $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
         $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
 
         $this->assertSame(job_status::COMPLETE, job_manager::load((int) $this->submission->id)->status);

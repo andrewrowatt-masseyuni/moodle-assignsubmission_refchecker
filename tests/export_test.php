@@ -297,11 +297,16 @@ final class export_test extends \advanced_testcase {
      * Which database answered, and which file the reference came from, are for teachers only.
      */
     public function test_source_columns_are_teacher_only(): void {
-        $teacherrows = $this->rows_for(true);
+        // Seeded once and viewed twice, rather than once per viewer: the point is that the same
+        // references are described differently to a teacher and a student, and a submission is
+        // only ever allowed one job anyway.
+        $references = job_manager::get_references((int) $this->seed_job()->id);
+
+        $teacherrows = new reference_rows($references, true);
         $this->assertArrayHasKey('source', $teacherrows->columns());
         $this->assertArrayHasKey('sourcefile', $teacherrows->columns());
 
-        $studentrows = $this->rows_for(false);
+        $studentrows = new reference_rows($references, false);
         $this->assertArrayNotHasKey('source', $studentrows->columns());
         $this->assertArrayNotHasKey('sourcefile', $studentrows->columns());
 

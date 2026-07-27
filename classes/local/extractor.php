@@ -50,7 +50,7 @@ class extractor {
      *
      * @var int
      */
-    public const MIN_USEFUL_CHARS = 500;
+    public const MIN_USEFUL_CHARS = 100;
 
     /** @var string Extraction produced usable text. */
     public const RESULT_OK = 'ok';

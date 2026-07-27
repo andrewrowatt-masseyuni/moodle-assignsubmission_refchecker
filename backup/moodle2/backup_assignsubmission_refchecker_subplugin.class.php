@@ -35,13 +35,15 @@ class backup_assignsubmission_refchecker_subplugin extends backup_subplugin {
         $subplugin = $this->get_subplugin_element();
         $subpluginwrapper = new backup_nested_element($this->get_recommended_name());
 
-        // The student's own work, so this matters more than the derived results below it.
+        // Both of these carry the submission they belong to, which the restore turns back into the
+        // id the new submission was given. The parent element supplies it on the way out but not on
+        // the way back in, so leaving it out of the backup makes the restore unable to place them.
         $text = new backup_nested_element('submission_refchecker_text', ['id'], [
-            'referencetext', 'timecreated', 'timemodified',
+            'submission', 'referencetext', 'timecreated', 'timemodified',
         ]);
 
         $job = new backup_nested_element('submission_refchecker', ['id'], [
-            'status', 'generation', 'contenthash', 'totalrefs', 'checkedrefs',
+            'submission', 'status', 'generation', 'contenthash', 'totalrefs', 'checkedrefs',
             'verifiedrefs', 'partialrefs', 'mismatchrefs', 'notfoundrefs', 'issuerefs',
             'retractedrefs', 'predatoryrefs', 'oldestyear', 'newestyear', 'avgyear',
             'totalcitations', 'avgcitations', 'truncated', 'sectionheading',

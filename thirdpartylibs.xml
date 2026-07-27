@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<libraries>
+    <!-- Locally patched from PHP 8.2 to 8.1 syntax; see thirdparty/elephant-php/PATCHES.md. -->
+    <library>
+        <location>thirdparty/elephant-php</location>
+        <name>elephant-php</name>
+        <version>0.4.1</version>
+        <license>BSD</license>
+        <licenseversion>2.0</licenseversion>
+    </library>
+</libraries>

@@ -125,6 +125,7 @@ mod/assign/submission/refchecker/
 │   ├── local/
 │   │   ├── job_manager.php     ALL reads/writes of the plugin's tables
 │   │   ├── extractor.php       stored_file → plain text
+│   │   ├── docx_converter.php  .docx → plain text, no LibreOffice needed (§7a)
 │   │   ├── reference_parser.php  text → individual references + metadata
 │   │   ├── matcher.php         scoring and issue detection
 │   │   ├── predatory.php       journal/publisher list matching
@@ -148,7 +149,8 @@ mod/assign/submission/refchecker/
 ├── templates/                  view_header, status, report, reference_card, export_pdf_*
 ├── amd/src/reportfilter.js     client-side filter bar
 ├── db/                         install.xml, upgrade.php, tasks.php, events.php, access.php
-└── backup/moodle2/             backup + restore subplugin classes
+├── backup/moodle2/             backup + restore subplugin classes
+└── thirdparty/elephant-php/    bundled docx reader; patched to PHP 8.1 by script, not by hand (§7a)
 ```
 
 ---
@@ -241,7 +243,7 @@ this way carry no `sourcefile`, and the job no `sectionheading`.
 submission. `extractor::is_candidate()` filters on extension (site setting `supportedtypes`,
 default `pdf, docx, odt, rtf, txt`) and size (`maxfilesizemb`, default 20 MB).
 
-**Text extraction** ([extractor.php](../classes/local/extractor.php)) takes one of two routes:
+**Text extraction** ([extractor.php](../classes/local/extractor.php)) takes one of three routes:
 
 - **PDF → `pdftotext`**, invoked as `pdftotext -layout -enc UTF-8 -q`. The `-layout` flag matters
   more than it looks: it preserves the hanging-indent structure of a reference list, which is
@@ -250,11 +252,16 @@ default `pdf, docx, odt, rtf, txt`) and size (`maxfilesizemb`, default 20 MB).
   reconstructs the page as positioned text boxes, which scrambles line order. Damaged PDFs make
   `pdftotext` exit non-zero while still writing usable output, so the output file is trusted over
   the exit code.
-- **DOCX / DOC / ODT / RTF → Moodle's document converter** (`core_files\converter`, normally
+- **DOCX → the bundled converter first** ([docx_converter.php](../classes/local/docx_converter.php)),
+  gated on the `usebuiltinconverter` setting, falling back to Moodle's document converter when it
+  is off or returns nothing. This is the one format the plugin can read with no subprocess, no
+  external service and nothing installed, which matters because it is the most common submission
+  format after PDF. See §7a below.
+- **DOC / ODT / RTF → Moodle's document converter** (`core_files\converter`, normally
   LibreOffice), gated on the `uselibreoffice` setting. Anything short of
   `conversion::STATUS_COMPLETE` is treated as a miss rather than as empty text.
-- **TXT** is read directly. Both converters are optional; a site with neither still checks plain
-  text submissions.
+- **TXT** is read directly. Every route but the bundled one is optional; a site with none of them
+  still checks plain text submissions.
 
 Extracted text is normalised (forced to valid UTF-8, CRLF → LF, non-breaking spaces and soft
 hyphens removed, horizontal whitespace collapsed) but **line breaks are preserved**, because the
@@ -942,6 +949,63 @@ worth knowing after a configuration change.
 
 ---
 
+## 7a. The bundled DOCX converter
+
+`thirdparty/elephant-php/` holds [elephant-php](https://github.com/endless-creativity/elephant-php)
+**v0.4.1** (BSD-2-Clause), a dependency-free PHP port of mammoth.js, declared in
+[thirdpartylibs.xml](../thirdpartylibs.xml). Only `src/` is vendored — no `bin/`, no tests, no
+Composer machinery. Moodle gives plugins no Composer autoloader and its own class loader will not
+resolve a non-Moodle namespace, so
+[thirdparty/elephant-php/autoload.php](../thirdparty/elephant-php/autoload.php) is a hand-written
+PSR-4 shim, the same approach `local/faultreporting` takes.
+
+**Raw text, not HTML or Markdown.** `Converter::extractRawText()` emits one paragraph per block
+separated by a blank line, which is exactly the shape
+[reference_parser](../classes/local/reference_parser.php) wants: `find_section()` needs the heading
+alone on its own line, and the unnumbered splitter starts a new reference at a blank line followed
+by a capital. `convertToMarkdown()` would prefix the heading with `#` and fail `heading_regex()`,
+producing a document in which no reference list can be found. `tests/extractor_test.php` counts the
+references it gets back rather than just the characters, because that is the only assertion that
+would notice such a regression.
+
+**The sources are patched from PHP 8.2 to 8.1.** Upstream declares `"php": "^8.2"` and needs it for
+exactly one construct: `readonly class`, in 42 files. Nothing else in the 72 source files is
+8.2-only. Since Moodle 4.5 supports PHP 8.1–8.3 and the target site runs 8.1, shipping that floor
+would have made this whole feature dead code on the only server that matters, so
+[apply-php81-patch.php](../thirdparty/elephant-php/apply-php81-patch.php) rewrites the shorthand
+longhand — `final readonly class X` plus bare properties becomes `final class X` with each of the
+101 properties marked `readonly`. Identical semantics, verified on 8.1 by asserting that writing to
+a patched property still throws `Error`, not merely that the files parse.
+
+So **do not hand-edit `src/`** — change the patch script and re-run it. The script asserts it found
+42 classes and 101 properties and exits non-zero otherwise, because a half-patched tree is worse
+than an unpatched one, and `test_vendored_library_carries_the_php81_patch()` fails the suite if a
+re-vendor lands unpatched code. The full procedure is in
+[PATCHES.md](../thirdparty/elephant-php/PATCHES.md).
+
+The hazard that shaped the design is still worth understanding, because it constrains the code even
+now: `readonly class` is a *parse* error before 8.2, and a parse error in an autoloaded file is
+fatal and cannot be caught. That is why `docx_converter::is_available()` is consulted **before**
+`autoload.php` is required rather than being wrapped in a try/catch around it. Keep that ordering.
+`MIN_PHP_VERSION` is now `80100`, matching Moodle's own floor, so in practice the only thing that
+can make `is_available()` false is a missing `ext-zip` — which Moodle requires anyway. The fallback
+to LibreOffice is retained regardless, since a converter that quietly declines is much better than
+one that takes the submission down with it.
+
+Failure modes, all confirmed against the library rather than assumed:
+
+| Input | Library behaviour | `docx_converter::extract()` |
+|---|---|---|
+| Valid `.docx` | Returns text | Returns text |
+| Not a zip / missing file / no `word/document.xml` | Throws `RuntimeException` | `null`, logged at `DEBUG_DEVELOPER` |
+| Valid `.docx` with no text | Returns `''` | `null`, **not** logged — nothing went wrong |
+
+`null` in every case means "fall through to LibreOffice", never "this submission is empty". Size is
+already bounded by `maxfilesizemb` in `extractor::is_candidate()` before any of this runs, which is
+what limits zip-decompression exposure.
+
+---
+
 ## 8. Configuration reference
 
 Site settings ([settings.php](../settings.php)). There is deliberately **no** site-wide "disable"
@@ -956,7 +1020,8 @@ management page.
 | `semanticscholarkey` | — | Required before enabling Semantic Scholar |
 | `rateinterval_*` | 100 / 100 / 3000 / 1000 / 3000 ms | Minimum gap between requests, per source |
 | `pathtopdftotext` | `/usr/bin/pdftotext` | PDF extraction |
-| `uselibreoffice` | on | Word/ODT/RTF extraction via Moodle's converter |
+| `usebuiltinconverter` | on | DOCX extraction via the bundled library; takes priority over `uselibreoffice`. Needs only `ext-zip` — see §7a |
+| `uselibreoffice` | on | DOC/ODT/RTF extraction via Moodle's converter, and DOCX when the bundled one does not apply |
 | `supportedtypes` | pdf, docx, odt, rtf, txt | |
 | `maxfilesizemb` | 20 MB | |
 | `chunksize` | 10 | References per task run |

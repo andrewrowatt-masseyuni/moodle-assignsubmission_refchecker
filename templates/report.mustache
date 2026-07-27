@@ -40,8 +40,12 @@
     * errorcode string - machine readable failure code
     * errormessage string - human readable failure detail
     * timecompleted string - when checking finished
+    * canexport bool - whether the viewer may download the report
+    * exportheading string - the label introducing the download links
+    * exportformats array - the download links, one per offered format
     * canrerun bool - whether the viewer may re-run the check
     * rerunurl string - the re-run form target
+    * hasactions bool - whether there is anything in the controls row at all
 
     Example context (json):
     {
@@ -67,8 +71,19 @@
         "errorcode": "",
         "errormessage": "",
         "timecompleted": "",
+        "canexport": true,
+        "exportheading": "Download",
+        "exportformats": [
+            {
+                "key": "pdf",
+                "label": "PDF",
+                "arialabel": "Download this report as PDF",
+                "url": "https://example.com/mod/assign/submission/refchecker/export.php?id=1&format=pdf&sesskey=abc"
+            }
+        ],
         "canrerun": false,
-        "rerunurl": ""
+        "rerunurl": "",
+        "hasactions": true
     }
 }}
 <div class="assignsubmission_refchecker-report" data-region="refchecker-report">
@@ -174,13 +189,26 @@
         </div>
     {{/showdiagnostics}}
 
-    {{#canrerun}}
-        <form method="post" action="{{rerunurl}}" class="assignsubmission_refchecker-rerun">
-            <button type="submit" class="btn btn-secondary btn-sm">
-                {{#str}}report_rerun, assignsubmission_refchecker{{/str}}
-            </button>
-        </form>
-    {{/canrerun}}
+    {{#hasactions}}
+        <div class="assignsubmission_refchecker-actions">
+            {{#canexport}}
+                <span class="assignsubmission_refchecker-actionlabel">{{exportheading}}</span>
+                {{#exportformats}}
+                    {{! A link rather than a form: on the grading page this report is already inside the quick grading form, and forms do not nest. }}
+                    <a href="{{url}}" class="btn btn-outline-secondary btn-sm" aria-label="{{arialabel}}" title="{{arialabel}}">
+                        {{label}}
+                    </a>
+                {{/exportformats}}
+            {{/canexport}}
+            {{#canrerun}}
+                <form method="post" action="{{rerunurl}}" class="assignsubmission_refchecker-rerun m-0">
+                    <button type="submit" class="btn btn-secondary btn-sm">
+                        {{#str}}report_rerun, assignsubmission_refchecker{{/str}}
+                    </button>
+                </form>
+            {{/canrerun}}
+        </div>
+    {{/hasactions}}
 </div>
 {{#js}}
 require(['assignsubmission_refchecker/reportfilter'], function(Filter) {

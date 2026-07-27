@@ -1,0 +1,125 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template assignsubmission_refchecker/export_pdf_reference
+
+    One reference's block in the downloadable report. Rendered once per reference, so that a long
+    reference list does not go through TCPDF's HTML parser as a single enormous string.
+
+    This template is rendered into TCPDF's writeHTML(), NOT into a browser. TCPDF understands only
+    a small fixed subset of HTML and loads no stylesheet, so classes do nothing here: use inline
+    style attributes, and only color, background-color, font-size, font-weight, text-align, border
+    and width. There is no flexbox, grid or float, so any columns must be a table with an explicit
+    percentage width on every cell, because TCPDF's automatic widths are unreliable.
+
+    One exception to "style everything with CSS": cellpadding is read by TCPDF only as an
+    attribute (tcpdf.php getHtmlDomArray), so it stays an attribute here even though HTML5 calls it
+    obsolete and the Mustache linter says so.
+
+    All values other than the admin authored strings come from external databases, so this template
+    uses HTML escaping variables throughout and never triple-brace ones.
+
+    Context variables required for this template:
+    * heading string - "Reference 1"
+    * rawref string - the reference exactly as the student wrote it
+    * matchstatuslabel string - the localised match status
+    * statuscolor string - the hex colour for that status
+    * hasconfidence bool - whether a confidence score applies
+    * matchconfidence int - the confidence score, 0-100
+    * confidencelabel string - the label for the confidence score
+    * retracted bool - whether the matched work has been retracted
+    * retractedwarning string - the retraction warning
+    * predatory bool - whether the journal is possibly predatory
+    * predatorywarning string - the predatory journal warning
+    * haserror bool - whether this reference failed to check
+    * errormessage string - why it failed
+    * hasdetails bool - whether anything was matched
+    * details array - the matched metadata, as label and value pairs
+    * hasissues bool - whether any issues were reported
+    * issueslabel string - the heading for the issues list
+    * issues array - the issue strings
+
+    Example context (json):
+    {
+        "heading": "Reference 1",
+        "rawref": "Smith, J. (2019). Learning at scale. Nature, 570(7760), 12-15.",
+        "matchstatuslabel": "Verified",
+        "statuscolor": "#146c43",
+        "hasconfidence": true,
+        "matchconfidence": 94,
+        "confidencelabel": "Confidence",
+        "retracted": false,
+        "retractedwarning": "",
+        "predatory": false,
+        "predatorywarning": "",
+        "haserror": false,
+        "errormessage": "",
+        "hasdetails": true,
+        "details": [
+            {"label": "Title", "value": "Learning at scale"},
+            {"label": "Year", "value": "2019"}
+        ],
+        "hasissues": false,
+        "issueslabel": "Issues",
+        "issues": []
+    }
+}}
+<p style="font-size: 10pt;">
+    <span style="font-weight: bold;">{{heading}}</span>
+    <span style="color: {{statuscolor}}; font-weight: bold;">&nbsp;&nbsp;{{matchstatuslabel}}</span>
+    {{#hasconfidence}}
+        <span style="color: #5c636a; font-size: 8pt;">&nbsp;&nbsp;{{confidencelabel}} {{matchconfidence}}%</span>
+    {{/hasconfidence}}
+</p>
+
+<table cellpadding="4">
+    <tr>
+        <td style="width: 100%; border: 0.5px solid #adb5bd; background-color: #f8f9fa; font-size: 9pt;">{{rawref}}</td>
+    </tr>
+</table>
+
+{{#retracted}}
+    <p style="color: #b02a37; font-weight: bold; font-size: 9pt;">{{retractedwarning}}</p>
+{{/retracted}}
+
+{{#predatory}}
+    <p style="color: #997404; font-weight: bold; font-size: 9pt;">{{predatorywarning}}</p>
+{{/predatory}}
+
+{{#haserror}}
+    <p style="color: #5c636a; font-size: 9pt;">{{errormessage}}</p>
+{{/haserror}}
+
+{{#hasdetails}}
+    <table cellpadding="2">
+        {{#details}}
+            <tr>
+                <td style="width: 22%; font-size: 9pt; color: #5c636a;">{{label}}</td>
+                <td style="width: 78%; font-size: 9pt;">{{value}}</td>
+            </tr>
+        {{/details}}
+    </table>
+{{/hasdetails}}
+
+{{#hasissues}}
+    <p style="font-size: 9pt; font-weight: bold;">{{issueslabel}}</p>
+    <ul style="font-size: 9pt;">
+        {{#issues}}<li>{{.}}</li>{{/issues}}
+    </ul>
+{{/hasissues}}
+
+<br>

@@ -18,6 +18,7 @@ namespace assignsubmission_refchecker\output;
 
 use assignsubmission_refchecker\local\display_level;
 use assignsubmission_refchecker\local\job_status;
+use assignsubmission_refchecker\local\json_columns;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\source\chain;
 use core_text;
@@ -71,6 +72,7 @@ class report implements renderable, templatable {
     public function export_for_template(renderer_base $output): array {
         $job = $this->job;
         $showreferences = $this->level >= display_level::FULL;
+        $hasreferences = $showreferences && !empty($this->references);
 
         return [
             'heading' => get_string('report_heading', 'assignsubmission_refchecker'),
@@ -83,7 +85,7 @@ class report implements renderable, templatable {
             'dashboard' => $this->export_dashboard(),
         ] + $this->export_notices() + [
             'showreferences' => $showreferences,
-            'hasreferences' => $showreferences && !empty($this->references),
+            'hasreferences' => $hasreferences,
             'references' => $showreferences ? $this->export_references() : [],
             'filters' => $showreferences ? $this->export_filters() : [],
             'showdiagnostics' => $this->isteacher,
@@ -92,6 +94,12 @@ class report implements renderable, templatable {
             'timecompleted' => $this->isteacher && $job->timecompleted
                 ? userdate($job->timecompleted)
                 : '',
+            // Anyone reading a non-empty full report may take a copy of it away, which is exactly
+            // the condition under which the references are on screen. export.php re-derives the
+            // entitlement for itself, for the reason given on view() in locallib.php.
+            'canexport' => $hasreferences,
+            'exportheading' => get_string('export_heading', 'assignsubmission_refchecker'),
+            'exportformats' => $hasreferences ? $this->export_formats() : [],
             // Re-running spends external API quota, so it is offered only to graders.
             'canrerun' => $this->canrerun,
             'rerunurl' => $this->canrerun
@@ -100,7 +108,40 @@ class report implements renderable, templatable {
                     'sesskey' => sesskey(),
                 ]))->out(false)
                 : '',
+            'hasactions' => $hasreferences || $this->canrerun,
         ];
+    }
+
+    /**
+     * The download controls, one per offered format.
+     *
+     * A list rather than three url keys, so the template stays one loop and offering another
+     * format is a one line change. The submission id comes off the job, which is what scopes each
+     * report's controls to its own submission when several are expanded on a grading page.
+     *
+     * @return array<int, array{key: string, label: string, arialabel: string, url: string}>
+     */
+    protected function export_formats(): array {
+        $out = [];
+
+        foreach (['pdf', 'excel', 'csv'] as $key) {
+            // Core already translates the format names: "PDF", "Excel", "CSV".
+            $label = get_string('shortname', 'dataformat_' . $key);
+
+            $out[] = [
+                'key' => $key,
+                'label' => $label,
+                // Three bare format names in a row say nothing to a screen reader.
+                'arialabel' => get_string('export_as', 'assignsubmission_refchecker', $label),
+                'url' => (new moodle_url('/mod/assign/submission/refchecker/export.php', [
+                    'id' => (int) $this->job->submission,
+                    'format' => $key,
+                    'sesskey' => sesskey(),
+                ]))->out(false),
+            ];
+        }
+
+        return $out;
     }
 
     /**
@@ -287,12 +328,7 @@ class report implements renderable, templatable {
      * @return string[]
      */
     protected function decode_list(?string $json): array {
-        if ($json === null || $json === '') {
-            return [];
-        }
-        $decoded = json_decode($json, true);
-
-        return is_array($decoded) ? array_values(array_filter(array_map('strval', $decoded))) : [];
+        return json_columns::decode_list($json);
     }
 
     /**
@@ -302,11 +338,6 @@ class report implements renderable, templatable {
      * @return array<string, string>
      */
     protected function decode_map(?string $json): array {
-        if ($json === null || $json === '') {
-            return [];
-        }
-        $decoded = json_decode($json, true);
-
-        return is_array($decoded) ? $decoded : [];
+        return json_columns::decode_map($json);
     }
 }

@@ -109,6 +109,7 @@ mod/assign/submission/refchecker/
 ├── lib.php                    core\check registration callback
 ├── locallib.php               assign_submission_refchecker — the subplugin class
 ├── action.php                 teacher-initiated re-run (sesskey + mod/assign:grade)
+├── export.php                 download the report (sesskey + full-report entitlement)
 ├── settings.php               site configuration
 ├── cli/check_sources.php      configuration + reachability probe, one live lookup
 ├── classes/
@@ -130,6 +131,12 @@ mod/assign/submission/refchecker/
 │   │   ├── rate_limiter.php    per-source request pacing (shared across workers)
 │   │   ├── circuit_breaker.php per-source stand-down after repeated failures
 │   │   ├── job_status.php / match_status.php / display_level.php / check_timing.php
+│   │   ├── json_columns.php    shared decoding of the JSON reference columns
+│   │   ├── export/
+│   │   │   ├── access.php          who may download a submission's report
+│   │   │   ├── naming.php          filename and cover subject, blind-marking aware
+│   │   │   ├── reference_rows.php  references flattened for CSV/Excel
+│   │   │   └── pdf_report.php      the designed PDF document
 │   │   ├── exception/          permanent | transient | rate_limited
 │   │   └── source/
 │   │       ├── reference_source.php  interface
@@ -138,7 +145,7 @@ mod/assign/submission/refchecker/
 │   │       └── crossref | openalex | arxiv | dblp | semanticscholar
 │   ├── output/                 report.php, status_summary.php
 │   └── privacy/provider.php
-├── templates/                  view_header, status, report, reference_card
+├── templates/                  view_header, status, report, reference_card, export_pdf_*
 ├── amd/src/reportfilter.js     client-side filter bar
 ├── db/                         install.xml, upgrade.php, tasks.php, events.php, access.php
 └── backup/moodle2/             backup + restore subplugin classes
@@ -744,6 +751,7 @@ no extra queries at all.
   link** — not-found is frequently a coverage gap rather than a fabrication, so students need
   somewhere obvious to go and check for themselves. Teachers additionally see which source answered.
 - **Diagnostics** (teachers only) — completion time, errorcode and error message.
+- **Download** (`FULL` only) — PDF, Excel and CSV links to `export.php`. See 6.5.
 - **Re-run** (requires `mod/assign:grade`) — posts to `action.php`.
 
 Badge colours are chosen carefully: `notfound` is `secondary`, never `danger`, because a correctly
@@ -754,7 +762,52 @@ cited book that simply is not indexed would otherwise be presented to the studen
 > writes it — only the test generator does. The card section is therefore never shown in practice.
 > This is a known gap, not a bug in the reader.
 
-### 6.5 System status check
+### 6.5 Downloading the report — `export.php`
+
+[export.php](../export.php) serves one submission's report as PDF, Excel or CSV. Reachable by
+**exactly the people the full report is reachable by**, which is not the same as the capability
+holders: [access.php](../classes/local/export/access.php) asks both questions, in order —
+
+1. may this viewer see this submission at all (`require_view_submission()`, or
+   `require_view_group_submission()` when the submission carries no `userid`), which is what stops
+   one student reading another's report by incrementing the id; then
+2. is their effective display level `FULL`, which is what lets a student in a `FULL` assignment
+   download their own report and stops a `SUMMARY` one downloading anybody's.
+
+No new capability: adding an `:export` one would break the student-at-`FULL` case, which is the
+whole requirement.
+
+**Formats.** CSV and Excel go through `\core\dataformat::download_data()` with rows flattened by
+[reference_rows.php](../classes/local/export/reference_rows.php) — 15 columns, plus `source` and
+`sourcefile` for teachers only. PDF is a *designed* document
+([pdf_report.php](../classes/local/export/pdf_report.php)) rather than the `dataformat_pdf` grid,
+which at 17 equal-width landscape columns is unreadable and clones the whole TCPDF object per cell.
+The layout is mustache rendered into `writeHTML()`, one call per reference; both templates carry a
+docblock listing the small HTML subset TCPDF actually supports.
+
+**References never straddle a page break.** A reference split across pages separates the submitted
+text from the verdict on it, which is the one comparison the document exists to support. TCPDF
+cannot be asked to avoid this in advance — there is no way to measure arbitrary HTML without
+laying it out — so `write_together()` writes each block inside a transaction, and if the block
+spilled onto a new page, calls `rollbackTransaction(true)` (the in-place form; the default returns
+a *different* object and would leave the caller holding the old one), adds a page, and rewrites.
+Blocks already at the top of a page skip the transaction entirely, since a block that does not fit
+there does not fit anywhere; one taller than a whole page splits and is not retried, so there is no
+loop. Only one clone is alive at a time.
+
+**Constraints the file itself explains.** `NO_OUTPUT_BUFFERING` is defined before `config.php`, so
+from that point any stray byte — a `debugging()` notice, a PHP warning — corrupts the download
+instead of being displayed. Hence: `$PAGE->set_url()` and `set_context()` set early so the renderer
+never has to complain, every capability check and every `throw` above the first write, no
+`$OUTPUT->header()` anywhere, and `die` after both writers (neither `download_data()` nor TCPDF's
+`Output()` exits). `\core\dataformat` appends the file extension; TCPDF does not.
+
+Exports always contain the **whole** reference list, whatever the on-screen filter is set to: a
+file somebody archives should be the complete record. Blind marking is honoured in the filename and
+on the cover ([naming.php](../classes/local/export/naming.php)) — a marker deliberately kept from a
+student's identity must not be handed it by a download.
+
+### 6.6 System status check
 
 [classes/check/sources.php](../classes/check/sources.php), registered through the
 `assignsubmission_refchecker_status_checks()` callback in [lib.php](../lib.php), appears under
@@ -773,7 +826,7 @@ It reports:
 Result is `OK` when there are no problems, `WARNING` otherwise, with an action link to the plugin
 settings page. Note that it makes **one live request per enabled source** each time it runs.
 
-### 6.6 CLI probe
+### 6.7 CLI probe
 
 ```bash
 php mod/assign/submission/refchecker/cli/check_sources.php
@@ -786,7 +839,7 @@ defaulting to a known real paper — showing the parsed metadata, the match stat
 sub-scores, the found record and elapsed time. This is the fastest way to answer "is it the parser
 or the lookup?" for a reference a marker is suspicious about.
 
-### 6.7 Logging and privacy reporting
+### 6.8 Logging and privacy reporting
 
 - **`\assignsubmission_refchecker\event\check_completed`** is triggered whenever a job completes,
   carrying `submissionid`, `totalrefs`, `verifiedrefs` and `notfoundrefs`. It appears in the

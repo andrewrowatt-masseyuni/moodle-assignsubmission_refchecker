@@ -28,6 +28,8 @@
     display: inline-block;
     height: 0.85em;
     width: 0.85em;
+    min-width: 0.85em;
+    min-height: 0.85em;
 }
 
 @keyframes assignsubmission_refchecker-spin {
@@ -245,6 +247,21 @@
     .badge {
         font-weight: 400;
     }
+}
+
+/* The controls at the foot of the report: the download links and, for graders, re-run. Laid out
+   here rather than with Bootstrap gap utilities, which are not available on every theme. */
+.assignsubmission_refchecker-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.assignsubmission_refchecker-actionlabel {
+    font-size: 0.875rem;
+    color: var(--secondary, #6c757d);
 }
 
 /* The reference list a student pasted in. Preserve their line breaks, but wrap long references

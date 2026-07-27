@@ -536,6 +536,17 @@ are recalculated, the task re-queues itself for the moment the service nominated
 normally. Throwing would work but would also inflate Moodle's own fail delay for a completely
 routine event.
 
+> **Catch it before `transient_exception`, always.** `rate_limited_exception` *extends*
+> `transient_exception`, so any handler that lists the parent first swallows every rate limit as an
+> ordinary fault. `check_one()` catches and re-throws it explicitly for this reason, as does
+> `chain::check()`. Getting this wrong is silent and expensive: the task never backs off, so it
+> keeps calling a service that just asked it to stop; each 429 spends one of the reference's three
+> attempts; and after three the reference is recorded as **not found** with the rate-limit message
+> shown against it — a wrong answer presented to a student for a problem that was never theirs.
+> `test_rate_limiting_reschedules_without_throwing()` asserts that nothing at all is written to the
+> reference rows, which is what actually pins the ordering; the reschedule assertions do not, since
+> the task re-queues itself either way and only the delay differs.
+
 Every task run begins with the **generation guard** in
 [job_task.php](../classes/task/job_task.php): the job is re-read straight from the database
 (bypassing the per-request cache) and abandoned unless its `generation` still matches the value in

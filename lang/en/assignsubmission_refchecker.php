@@ -84,6 +84,7 @@ $string['error_abandoned'] = 'Checking was abandoned after repeated failures.';
 $string['error_extractfailed'] = 'The text of this file could not be read.';
 $string['error_noextractabletext'] = 'Almost no text could be read from this file. It may be a scanned image rather than a text document.';
 $string['error_nopdftotext'] = 'PDF text extraction is not configured on this site.';
+$string['error_ratelimited'] = 'An external database asked us to slow down, so checking was paused and will continue shortly.';
 $string['event_check_completed'] = 'Reference check completed';
 $string['export_as'] = 'Download this report as {$a}';
 $string['export_col_error'] = 'Check error';

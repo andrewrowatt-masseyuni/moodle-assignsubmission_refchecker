@@ -135,9 +135,13 @@ class check_references extends adhoc_task {
      * unwell must not be able to mark a whole submission as failed. Everything is instead recorded
      * against the reference itself, where the attempt budget bounds how long it can go on.
      *
+     * Being asked to slow down is the one exception, and propagates: it says nothing about this
+     * reference, and applies equally to every reference queued behind it.
+     *
      * @param chain $chain
      * @param stdClass $reference
      * @return void
+     * @throws rate_limited_exception When a database asked us to slow down.
      */
     protected function check_one(chain $chain, stdClass $reference): void {
         $parsed = array_merge(
@@ -147,6 +151,16 @@ class check_references extends adhoc_task {
 
         try {
             $result = $chain->check($parsed);
+        } catch (rate_limited_exception $e) {
+            // Must come before the transient catch. rate_limited_exception is a subclass of it, so
+            // ordering these the other way round silently swallows every rate limit here: the
+            // caller's backpressure handling would never run, the reference would spend one of its
+            // three attempts on something that was never its fault, and after three it would be
+            // recorded as "not found" with an internal message shown against it.
+            //
+            // Nothing was searched, so there is nothing to record. Hand it to the caller, which
+            // reschedules the whole task for the moment the service nominated.
+            throw $e;
         } catch (permanent_exception $e) {
             job_manager::record_reference_failure($reference, $e->getMessage());
             return;

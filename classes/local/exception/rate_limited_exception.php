@@ -23,6 +23,13 @@ namespace assignsubmission_refchecker\local\exception;
  * the service nominated and returns normally, rather than throwing. Throwing would work, but it
  * would also inflate Moodle's fail delay for what is a completely routine, expected event.
  *
+ * Because it extends transient_exception, every handler that catches transient failures must catch
+ * this first or it will be swallowed as an ordinary fault. Both callers do
+ * ({@see \assignsubmission_refchecker\local\source\chain::check()} and
+ * {@see \assignsubmission_refchecker\task\check_references::check_one()}), and the message is
+ * translated because it has historically ended up stored against a reference and shown to students
+ * when one of them did not.
+ *
  * @package    assignsubmission_refchecker
  * @copyright  2026 Andrew Rowatt <A.J.Rowatt@massey.ac.nz>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -38,14 +45,16 @@ class rate_limited_exception extends transient_exception {
      * Constructor.
      *
      * @param int $retryafter Seconds to wait, as taken from the Retry-After header.
-     * @param string $message
+     * @param string|null $message Defaults to the translated wording. Callers describing an
+     *      internal decision rather than a service's answer should pass their own.
      */
     public function __construct(
         /** @var int Seconds to wait before trying again. */
         protected int $retryafter = self::DEFAULT_RETRY_AFTER,
-        string $message = 'Rate limited by the external service',
+        ?string $message = null,
     ) {
-        parent::__construct($message);
+        // Resolved here rather than as a default argument, which PHP will not allow to be a call.
+        parent::__construct($message ?? get_string('error_ratelimited', 'assignsubmission_refchecker'));
     }
 
     /**

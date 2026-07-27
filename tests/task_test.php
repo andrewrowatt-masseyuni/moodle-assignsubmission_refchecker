@@ -566,6 +566,21 @@ final class task_test extends \advanced_testcase {
 
         // The job is untouched and still checking, not failed.
         $this->assertSame(job_status::CHECKING, job_manager::load((int) $this->submission->id)->status);
+
+        // Nothing may be recorded against the references themselves. Being told to slow down says
+        // nothing about any particular reference, so it must not spend an attempt or leave an
+        // error behind: three of those and the reference is reported to the student as not found,
+        // with the internal message underneath it.
+        //
+        // This is what catches rate_limited_exception being caught as a plain transient_exception,
+        // which it is a subclass of. The reschedule assertions above do not: the task requeues
+        // itself either way, just with the wrong delay.
+        $job = job_manager::load((int) $this->submission->id);
+        foreach (job_manager::get_references((int) $job->id) as $reference) {
+            $this->assertSame(0, (int) $reference->attempts, 'A rate limit must not spend an attempt.');
+            $this->assertNull($reference->errormessage, 'A rate limit must not be recorded against a reference.');
+            $this->assertSame(job_status::REF_QUEUED, $reference->status);
+        }
     }
 
     /**

@@ -12,6 +12,7 @@
         <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="pending" SEQUENCE="false" COMMENT="notapplicable, pending, extracting, checking, norefs, complete, failed or cancelled."/>
         <FIELD NAME="generation" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Bumped on every re-trigger. Tasks abort when this no longer matches their custom data."/>
         <FIELD NAME="requeues" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="How many times the reconcile task has revived this job."/>
+        <FIELD NAME="deferrals" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Consecutive task runs put off by the pacer without sending a request. Reset by any run that gets through."/>
         <FIELD NAME="contenthash" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="sha1 of the sorted source file content hashes, so an unchanged resubmission skips re-checking."/>
         <FIELD NAME="totalrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Number of references extracted."/>
         <FIELD NAME="checkedrefs" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Number of references checked so far."/>

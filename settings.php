@@ -27,6 +27,7 @@
  */
 
 use assignsubmission_refchecker\local\check_timing;
+use assignsubmission_refchecker\local\debug_log;
 use assignsubmission_refchecker\local\display_level;
 use assignsubmission_refchecker\local\text_mode;
 
@@ -261,4 +262,31 @@ $settings->add(new admin_setting_configselect(
     new lang_string('defaultrequiretext_help', 'assignsubmission_refchecker'),
     text_mode::NONE,
     text_mode::menu()
+));
+
+// Diagnostics. Off by default and meant to be switched on only while a specific problem is being
+// chased, because the log records the text of students' references.
+$settings->add(new admin_setting_configcheckbox(
+    'assignsubmission_refchecker/debuglog',
+    new lang_string('debuglog', 'assignsubmission_refchecker'),
+    new lang_string('debuglog_help', 'assignsubmission_refchecker'),
+    0
+));
+
+$settings->add(new admin_setting_configselect(
+    'assignsubmission_refchecker/debuglogretention',
+    new lang_string('debuglogretention', 'assignsubmission_refchecker'),
+    new lang_string('debuglogretention_help', 'assignsubmission_refchecker'),
+    debug_log::DEFAULT_RETENTION_HOURS,
+    debug_log::retention_options()
+));
+
+$settings->add(new admin_setting_heading(
+    'assignsubmission_refchecker/debugloglink',
+    '',
+    new lang_string(
+        'debugloglink',
+        'assignsubmission_refchecker',
+        (new moodle_url('/mod/assign/submission/refchecker/logs.php'))->out()
+    )
 ));

@@ -16,6 +16,7 @@
 
 namespace assignsubmission_refchecker\task;
 
+use assignsubmission_refchecker\local\debug_log;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use core\task\manager;
@@ -55,6 +56,14 @@ class reconcile_jobs extends scheduled_task {
         $purged = job_manager::purge_expired_cache();
         if ($purged) {
             mtrace('  Purged ' . $purged . ' expired cache entr(ies).');
+        }
+
+        // The activity log drops its own expired files as each hour rolls over, but only while it
+        // is being written to. This is what clears the last few files after logging is switched
+        // off, so student reference text does not sit in dataroot indefinitely.
+        $logs = debug_log::purge();
+        if ($logs) {
+            mtrace('  Deleted ' . $logs . ' expired activity log file(s).');
         }
 
         $this->blank_expired_reference_text();

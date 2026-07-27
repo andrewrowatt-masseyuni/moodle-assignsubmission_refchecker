@@ -18,7 +18,9 @@ namespace assignsubmission_refchecker\local\source;
 
 use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
+use assignsubmission_refchecker\local\exception\service_refused_exception;
 use assignsubmission_refchecker\local\circuit_breaker;
+use assignsubmission_refchecker\local\debug_log;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\matcher;
@@ -203,8 +205,9 @@ class chain {
      * @param array $reference Parsed reference: raw, title, authors, journal, year, doi.
      * @return array The outcome, always populated. Keys: matchstatus, confidence, titlescore,
      *     authorscore, journalscore, issues, source, record (or null).
-     * @throws transient_exception When every source failed in a way worth retrying.
-     * @throws rate_limited_exception When a source asked us to slow down.
+     * @throws transient_exception When every source failed in a way worth retrying, including
+     *      when every one of them refused.
+     * @throws rate_limited_exception When our own pacer declined to send a request at all.
      */
     public function check(array $reference): array {
         $bestresult = null;
@@ -216,6 +219,11 @@ class chain {
             // A source that has been failing repeatedly is stood down for a few minutes rather
             // than asked once per reference while it is unwell.
             if (circuit_breaker::is_open($source->get_name())) {
+                debug_log::log('source.skipped', [
+                    'source' => $source->get_name(),
+                    'reason' => 'standdown',
+                    'remaining' => circuit_breaker::remaining($source->get_name()),
+                ]);
                 $unavailable[] = $source->get_name();
                 continue;
             }
@@ -225,15 +233,41 @@ class chain {
                 $answered++;
                 circuit_breaker::record_success($source->get_name());
             } catch (rate_limited_exception $e) {
-                // Backpressure is the caller's decision to act on, not something to route around.
+                // Our own pacer, not the service. Nothing was sent and nothing here can change
+                // that, so it is the caller's decision to act on rather than something to route
+                // around. Must precede the transient catch, which is its parent.
                 throw $e;
+            } catch (service_refused_exception $e) {
+                // The service turned us away. Stand it down for at least as long as it asked for,
+                // then carry on down the chain: one database refusing is not a reason to stop
+                // asking the others, and the answer they give is still a real answer. Must precede
+                // the transient catch, which is its parent.
+                debug_log::log('source.failed', [
+                    'source' => $source->get_name(),
+                    'kind' => 'refused',
+                    'error' => $e->getMessage(),
+                ]);
+                $transient = $e;
+                $unavailable[] = $source->get_name();
+                circuit_breaker::record_failure($source->get_name(), $e->get_retry_after());
+                continue;
             } catch (transient_exception $e) {
                 // Remember it, but give the remaining sources a chance first.
+                debug_log::log('source.failed', [
+                    'source' => $source->get_name(),
+                    'kind' => 'transient',
+                    'error' => $e->getMessage(),
+                ]);
                 $transient = $e;
                 $unavailable[] = $source->get_name();
                 circuit_breaker::record_failure($source->get_name());
                 continue;
             } catch (permanent_exception $e) {
+                debug_log::log('source.failed', [
+                    'source' => $source->get_name(),
+                    'kind' => 'permanent',
+                    'error' => $e->getMessage(),
+                ]);
                 debugging(
                     'assignsubmission_refchecker: ' . $source->get_name() . ' failed: ' . $e->getMessage(),
                     DEBUG_DEVELOPER,
@@ -242,12 +276,29 @@ class chain {
             }
 
             if ($record === null) {
+                debug_log::log('source.nomatch', ['source' => $source->get_name()]);
                 continue;
             }
 
             $result = $this->evaluate($reference, $record, $source);
 
+            debug_log::log('source.scored', [
+                'source' => $source->get_name(),
+                'matchstatus' => $result['matchstatus'] ?? '',
+                'confidence' => $result['confidence'] ?? '',
+                'title' => $result['titlescore'] ?? '',
+                'author' => $result['authorscore'] ?? '',
+                'journal' => $result['journalscore'] ?? '',
+                'found' => $record['title'] ?? '',
+            ]);
+
             if ($this->is_strong_match($reference, $result)) {
+                // The chain stops here, so say so: otherwise the log looks as though the remaining
+                // databases were simply never configured.
+                debug_log::log('source.accepted', [
+                    'source' => $source->get_name(),
+                    'confidence' => $result['confidence'] ?? '',
+                ]);
                 return $this->finalise($result, $unavailable);
             }
 

@@ -16,8 +16,9 @@
 
 namespace assignsubmission_refchecker\local\source;
 
+use assignsubmission_refchecker\local\debug_log;
 use assignsubmission_refchecker\local\exception\permanent_exception;
-use assignsubmission_refchecker\local\exception\rate_limited_exception;
+use assignsubmission_refchecker\local\exception\service_refused_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\rate_limiter;
 use core\http_client;
@@ -140,6 +141,16 @@ abstract class http_source implements reference_source {
 
         $timeout = (int) get_config('assignsubmission_refchecker', 'requesttimeout') ?: 30;
 
+        // Whether an API key went out, never the key itself. A source configured with a key still
+        // lands in the anonymous pool if the setting is empty or stale, and the refusals that
+        // causes look exactly like the service being busy.
+        debug_log::log('http.request', [
+            'source' => $this->get_name(),
+            'keyed' => $this->extra_headers() !== [] ? 1 : 0,
+            'url' => $url,
+        ]);
+        $started = microtime(true);
+
         try {
             $response = $this->client()->request('GET', $url, [
                 RequestOptions::HTTP_ERRORS => false,
@@ -151,10 +162,23 @@ abstract class http_source implements reference_source {
             ]);
         } catch (GuzzleException | Throwable $e) {
             // Connection refused, DNS failure, timeout: all worth trying again later.
+            debug_log::log('http.failed', [
+                'source' => $this->get_name(),
+                'ms' => self::elapsed_ms($started),
+                'error' => $e->getMessage(),
+            ]);
             throw new transient_exception($this->get_name() . ': ' . $e->getMessage(), 0, $e);
         }
 
         $status = $response->getStatusCode();
+        $body = (string) $response->getBody();
+
+        debug_log::log('http.response', [
+            'source' => $this->get_name(),
+            'status' => $status,
+            'ms' => self::elapsed_ms($started),
+            'bytes' => strlen($body),
+        ]);
 
         if ($status === 404) {
             // A direct lookup for something that is not there. Not an error.
@@ -162,7 +186,19 @@ abstract class http_source implements reference_source {
         }
 
         if ($status === 429) {
-            throw new rate_limited_exception($this->retry_after($response->getHeaderLine('Retry-After')));
+            // Not necessarily anything to do with our request rate: these services also answer 429
+            // when they are simply overloaded. Treated as this source being unwell, so the chain
+            // carries on with the others rather than the whole submission stopping.
+            $retryafter = $this->retry_after($response->getHeaderLine('Retry-After'));
+            debug_log::log('ratelimit.rejected', [
+                'source' => $this->get_name(),
+                'retryafter' => $retryafter,
+                'header' => $response->getHeaderLine('Retry-After'),
+            ]);
+            throw new service_refused_exception(
+                $this->get_name() . ' refused the request: HTTP 429',
+                $retryafter,
+            );
         }
 
         if ($status >= 500) {
@@ -175,7 +211,17 @@ abstract class http_source implements reference_source {
             throw new permanent_exception($this->get_name() . ' rejected the request: HTTP ' . $status);
         }
 
-        return (string) $response->getBody();
+        return $body;
+    }
+
+    /**
+     * Milliseconds since a microtime() reading, for the activity log.
+     *
+     * @param float $started
+     * @return int
+     */
+    protected static function elapsed_ms(float $started): int {
+        return (int) round((microtime(true) - $started) * 1000);
     }
 
     /**
@@ -196,7 +242,7 @@ abstract class http_source implements reference_source {
     protected function retry_after(string $header): int {
         $header = trim($header);
         if ($header === '') {
-            return rate_limited_exception::DEFAULT_RETRY_AFTER;
+            return service_refused_exception::DEFAULT_RETRY_AFTER;
         }
 
         if (ctype_digit($header)) {
@@ -206,7 +252,7 @@ abstract class http_source implements reference_source {
         $timestamp = strtotime($header);
 
         return $timestamp === false
-            ? rate_limited_exception::DEFAULT_RETRY_AFTER
+            ? service_refused_exception::DEFAULT_RETRY_AFTER
             : max(1, $timestamp - time());
     }
 

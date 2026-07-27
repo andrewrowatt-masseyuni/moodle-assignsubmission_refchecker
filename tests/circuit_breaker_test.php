@@ -70,6 +70,31 @@ final class circuit_breaker_test extends \advanced_testcase {
     }
 
     /**
+     * A refusal stands the source down from the first one, without the usual tolerance.
+     *
+     * The tolerance is for failures we have to infer, such as a 500 or a timeout. A service that
+     * turns a request away has told us something definite, and asking again straight away is how
+     * one that was merely busy decides to start blocking the site properly.
+     */
+    public function test_a_minimum_stand_down_applies_from_the_first_failure(): void {
+        circuit_breaker::record_failure('semanticscholar', 120);
+
+        $this->assertTrue(circuit_breaker::is_open('semanticscholar'));
+        $this->assertGreaterThan(60, circuit_breaker::remaining('semanticscholar'));
+    }
+
+    /**
+     * The minimum is a floor, not a ceiling: repeated refusals still escalate.
+     */
+    public function test_repeated_refusals_still_escalate(): void {
+        for ($i = 0; $i < 6; $i++) {
+            circuit_breaker::record_failure('semanticscholar', 30);
+        }
+
+        $this->assertGreaterThan(30, circuit_breaker::remaining('semanticscholar'));
+    }
+
+    /**
      * Each further failure stands the source down for longer, up to a ceiling.
      */
     public function test_backoff_grows_and_is_capped(): void {

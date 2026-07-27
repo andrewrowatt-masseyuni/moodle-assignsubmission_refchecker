@@ -17,11 +17,18 @@
 namespace assignsubmission_refchecker\local\exception;
 
 /**
- * The external service asked us to slow down.
+ * This plugin's own pacer is not willing to send a request yet.
  *
- * Handled differently from other transient failures: the task reschedules itself for the moment
- * the service nominated and returns normally, rather than throwing. Throwing would work, but it
- * would also inflate Moodle's fail delay for what is a completely routine, expected event.
+ * Thrown only by {@see \assignsubmission_refchecker\local\rate_limiter::throttle()}, when the next
+ * free slot for a source is far enough away that sleeping through it would waste a cron worker.
+ * Nothing was sent, so this says nothing about the source's health; it is a scheduling decision
+ * about our own request rate, and it applies to every reference queued behind this one just as much
+ * as to this one.
+ *
+ * That is why it alone pauses the whole task: the task reschedules itself for the moment the slot
+ * comes free and returns normally, rather than throwing and inflating Moodle's fail delay for a
+ * routine event. A service refusing a request is the opposite case and is not this exception; see
+ * {@see service_refused_exception}.
  *
  * Because it extends transient_exception, every handler that catches transient failures must catch
  * this first or it will be swallowed as an ordinary fault. Both callers do

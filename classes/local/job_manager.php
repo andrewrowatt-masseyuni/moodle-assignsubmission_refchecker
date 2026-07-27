@@ -216,6 +216,7 @@ class job_manager {
         $job->assignment = $submission->assignment;
         $job->status = job_status::PENDING;
         $job->requeues = 0;
+        $job->deferrals = 0;
         $job->contenthash = null;
         $job->sectionheading = null;
         $job->truncated = 0;
@@ -433,6 +434,46 @@ class job_manager {
             // Always stamped, including on a requeue: this is what the retry delay measures.
             'timechecked' => time(),
         ]);
+    }
+
+    /**
+     * Note that a task run was put off without checking anything.
+     *
+     * Counted because nothing else bounds it. A deferral deliberately spends no reference attempt,
+     * and the reconcile task cannot see the job as stalled while it is still queueing a successor
+     * and stamping timemodified on the way past, so a pacer that never lets a run through would
+     * otherwise leave a submission rescheduling itself indefinitely.
+     *
+     * @param stdClass $job Updated in place, so a later write of the whole record keeps the count.
+     * @return int How many runs in a row have now been put off, this one included.
+     */
+    public static function record_deferral(stdClass $job): int {
+        global $DB;
+
+        $job->deferrals = (int) $job->deferrals + 1;
+        $DB->set_field(self::TABLE_JOB, 'deferrals', $job->deferrals, ['id' => $job->id]);
+        unset(self::$jobcache[(int) $job->submission]);
+
+        return (int) $job->deferrals;
+    }
+
+    /**
+     * Note that a run got through, so whatever was put off before it was only a delay.
+     *
+     * @param stdClass $job Updated in place.
+     * @return void
+     */
+    public static function clear_deferrals(stdClass $job): void {
+        global $DB;
+
+        if ((int) $job->deferrals === 0) {
+            // Runs after every chunk, and almost every chunk has nothing to clear.
+            return;
+        }
+
+        $job->deferrals = 0;
+        $DB->set_field(self::TABLE_JOB, 'deferrals', 0, ['id' => $job->id]);
+        unset(self::$jobcache[(int) $job->submission]);
     }
 
     /**

@@ -21,6 +21,7 @@ use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\match_status;
+use assignsubmission_refchecker\local\rate_limiter;
 use assignsubmission_refchecker\local\text_mode;
 use assignsubmission_refchecker\local\text_submission;
 use assignsubmission_refchecker\task\check_references;
@@ -77,6 +78,11 @@ final class task_test extends \advanced_testcase {
 
         $this->assign = $this->create_instance($this->course, [
             'assignsubmission_file_enabled' => 1,
+            // save_settings() on the file plugin reads both of these straight off the form
+            // data, so enabling it without them is an undefined property warning, which
+            // PHPUnit turns into a failure before the test body ever runs.
+            'assignsubmission_file_maxfiles' => 1,
+            'assignsubmission_file_maxsizebytes' => 1024 * 1024,
             'assignsubmission_refchecker_enabled' => 1,
         ]);
 
@@ -541,12 +547,14 @@ final class task_test extends \advanced_testcase {
     }
 
     /**
-     * Being rate limited reschedules rather than throwing.
+     * A database refusing a request does not stop the task.
      *
-     * Throwing would work, but it would also inflate Moodle's fail delay for something the
-     * service told us was routine and told us exactly how long to wait for.
+     * A 429 from these services is not reliably about our request rate: Semantic Scholar answers
+     * one while overloaded even to a keyed caller pacing itself well inside the allowance. So it is
+     * treated as that source being unwell and handled where every other source failure is, against
+     * the reference, whose attempt budget bounds it.
      */
-    public function test_rate_limiting_reschedules_without_throwing(): void {
+    public function test_a_refused_request_does_not_pause_the_task(): void {
         global $DB;
 
         $this->attach_submission_file(2);
@@ -557,30 +565,175 @@ final class task_test extends \advanced_testcase {
         $DB->delete_records('task_adhoc');
         $job = job_manager::load((int) $this->submission->id);
 
+        // One response is enough: the refusal stands crossref down, so the second reference finds
+        // it already skipped rather than asking again.
         $this->mock_responses([new Response(429, ['Retry-After' => '120'], '')]);
         $this->run_task($this->task(check_references::class, $job));
 
+        // Requeued for the ordinary inter-chunk delay, not parked for the two minutes the service
+        // named. Nothing about one database being unwell justifies stalling the whole submission.
         $queued = $DB->get_record('task_adhoc', ['classname' => '\\' . check_references::class]);
         $this->assertNotFalse($queued, 'The task should have rescheduled itself.');
-        $this->assertGreaterThanOrEqual(time() + 100, (int) $queued->nextruntime);
+        $this->assertLessThan(time() + 100, (int) $queued->nextruntime);
 
-        // The job is untouched and still checking, not failed.
-        $this->assertSame(job_status::CHECKING, job_manager::load((int) $this->submission->id)->status);
-
-        // Nothing may be recorded against the references themselves. Being told to slow down says
-        // nothing about any particular reference, so it must not spend an attempt or leave an
-        // error behind: three of those and the reference is reported to the student as not found,
-        // with the internal message underneath it.
-        //
-        // This is what catches rate_limited_exception being caught as a plain transient_exception,
-        // which it is a subclass of. The reschedule assertions above do not: the task requeues
-        // itself either way, just with the wrong delay.
         $job = job_manager::load((int) $this->submission->id);
+        $this->assertSame(job_status::CHECKING, $job->status);
+        $this->assertSame(0, (int) $job->deferrals, 'A refusal is not the pacer, so nothing was deferred.');
+
         foreach (job_manager::get_references((int) $job->id) as $reference) {
-            $this->assertSame(0, (int) $reference->attempts, 'A rate limit must not spend an attempt.');
-            $this->assertNull($reference->errormessage, 'A rate limit must not be recorded against a reference.');
+            $this->assertSame(1, (int) $reference->attempts);
             $this->assertSame(job_status::REF_QUEUED, $reference->status);
         }
+    }
+
+    /**
+     * A source that refuses every time still lets the job finish.
+     *
+     * The regression this guards is a submission stuck at "23 of 26" indefinitely: a refusal that
+     * pauses the whole task spends no attempt and refreshes the job's timemodified on its way past,
+     * so nothing in the plugin can see that it has stopped making progress and it reschedules
+     * itself every minute forever.
+     */
+    public function test_a_persistently_refused_source_still_finishes_the_job(): void {
+        global $DB;
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([new Response(429, [], '')]);
+
+        // The stand-down means only the first run gets as far as a request; the rest skip crossref
+        // and record the same "nothing could be consulted" outcome without one.
+        for ($attempt = 1; $attempt <= job_manager::MAX_REFERENCE_ATTEMPTS; $attempt++) {
+            $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
+
+            $reference = $DB->get_record(job_manager::TABLE_REFS, ['jobid' => $job->id]);
+            $this->assertSame($attempt, (int) $reference->attempts);
+
+            $DB->set_field(
+                job_manager::TABLE_REFS,
+                'timechecked',
+                time() - job_manager::RETRY_DELAY - 1,
+                ['id' => $reference->id],
+            );
+        }
+
+        // Out of attempts, so the reference is settled rather than tried a fourth time.
+        $reference = $DB->get_record(job_manager::TABLE_REFS, ['jobid' => $job->id]);
+        $this->assertSame(job_status::REF_ERROR, $reference->status);
+        $this->assertSame(match_status::NOTFOUND, $reference->matchstatus);
+
+        // And the next run closes the job, which is the part that never happened before.
+        $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
+        $this->assertSame(job_status::COMPLETE, job_manager::load((int) $this->submission->id)->status);
+    }
+
+    /**
+     * The pacer declining to send anything pauses the task and leaves the references alone.
+     *
+     * The one case that is genuinely about our own request rate. Nothing was sent, so no reference
+     * may spend an attempt or be given an error to show: three of those and it is reported to the
+     * student as not found, with an internal message underneath it.
+     */
+    public function test_the_pacer_pauses_without_touching_the_references(): void {
+        global $DB;
+
+        $this->attach_submission_file(2);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $DB->delete_records('task_adhoc');
+
+        // Claim crossref's next slot and put the one after it far enough out that the pacer hands
+        // the wait back instead of sleeping through it.
+        set_config('rateinterval_crossref', 60000, 'assignsubmission_refchecker');
+        rate_limiter::throttle('crossref');
+
+        $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
+
+        $queued = $DB->get_record('task_adhoc', ['classname' => '\\' . check_references::class]);
+        $this->assertNotFalse($queued, 'The task should have rescheduled itself.');
+        $this->assertGreaterThan(time() + 30, (int) $queued->nextruntime);
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->assertSame(job_status::CHECKING, $job->status);
+        $this->assertSame(1, (int) $job->deferrals);
+
+        foreach (job_manager::get_references((int) $job->id) as $reference) {
+            $this->assertSame(0, (int) $reference->attempts, 'A pause must not spend an attempt.');
+            $this->assertNull($reference->errormessage, 'A pause must not be recorded against a reference.');
+            $this->assertSame(job_status::REF_QUEUED, $reference->status);
+        }
+    }
+
+    /**
+     * A pacer that never lets a run through fails the job rather than looping forever.
+     *
+     * Pausing spends no attempt and leaves the job looking freshly modified, so this counter is the
+     * only thing standing between a misconfigured interval and a submission that reschedules itself
+     * indefinitely.
+     */
+    public function test_repeated_pauses_eventually_fail_the_job(): void {
+        global $DB;
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $DB->delete_records('task_adhoc');
+
+        set_config('rateinterval_crossref', 60000, 'assignsubmission_refchecker');
+        rate_limiter::throttle('crossref');
+
+        // Start one short of the limit rather than running the task twenty times over.
+        $DB->set_field(
+            job_manager::TABLE_JOB,
+            'deferrals',
+            check_references::MAX_CONSECUTIVE_DEFERRALS - 1,
+            ['id' => $job->id],
+        );
+        job_manager::reset_caches();
+
+        $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
+
+        $job = job_manager::load((int) $this->submission->id);
+        $this->assertSame(job_status::FAILED, $job->status);
+        $this->assertSame('pacerstalled', $job->errorcode);
+        $this->assertFalse(
+            $DB->record_exists('task_adhoc', ['classname' => '\\' . check_references::class]),
+            'A failed job must not leave a successor queued.',
+        );
+    }
+
+    /**
+     * A run that gets through clears the pauses before it.
+     *
+     * Otherwise a job that paused occasionally over a long submission would accumulate its way to
+     * the limit and be failed for something that was only ever a delay.
+     */
+    public function test_a_successful_chunk_clears_the_deferral_count(): void {
+        global $DB;
+
+        $this->attach_submission_file(2);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $DB->set_field(job_manager::TABLE_JOB, 'deferrals', 5, ['id' => $job->id]);
+        job_manager::reset_caches();
+
+        $this->mock_responses([
+            self::crossref_hit('The study of subject number 1 in context'),
+            self::crossref_hit('The study of subject number 2 in context'),
+        ]);
+        $this->run_task($this->task(check_references::class, job_manager::load((int) $this->submission->id)));
+
+        $this->assertSame(0, (int) job_manager::load((int) $this->submission->id)->deferrals);
     }
 
     /**

@@ -120,5 +120,19 @@ function xmldb_assignsubmission_refchecker_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072505, 'assignsubmission', 'refchecker');
     }
 
+    if ($oldversion < 2026072702) {
+        // Bound the runs the pacer puts off. A deferral spends no reference attempt and refreshes
+        // the job's timemodified on its way past, so without a count of its own a job could
+        // reschedule itself indefinitely with nothing able to notice.
+        $table = new xmldb_table('assignsubmission_refchecker');
+
+        $deferrals = new xmldb_field('deferrals', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'requeues');
+        if (!$dbman->field_exists($table, $deferrals)) {
+            $dbman->add_field($table, $deferrals);
+        }
+
+        upgrade_plugin_savepoint(true, 2026072702, 'assignsubmission', 'refchecker');
+    }
+
     return true;
 }

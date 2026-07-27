@@ -88,9 +88,11 @@ class rate_limiter {
         if ($waitseconds >= self::MAX_INLINE_WAIT) {
             // Hand the wait back to the task API, which will re-run this work later. The slot has
             // already been reserved and simply goes unused, which costs nothing but a small gap.
+            debug_log::log('ratelimit.defer', ['source' => $source, 'seconds' => $waitseconds]);
             throw new rate_limited_exception($waitseconds, "Pacing requests to {$source}");
         }
 
+        debug_log::log('ratelimit.wait', ['source' => $source, 'ms' => $waitms]);
         usleep($waitms * 1000);
 
         return $waitseconds;

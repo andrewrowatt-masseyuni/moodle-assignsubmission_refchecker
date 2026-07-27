@@ -18,6 +18,7 @@ namespace assignsubmission_refchecker;
 
 use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
+use assignsubmission_refchecker\local\exception\service_refused_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\source\chain;
@@ -339,7 +340,7 @@ final class source_test extends \advanced_testcase {
         return [
             'server error' => [500, transient_exception::class],
             'bad gateway' => [502, transient_exception::class],
-            'rate limited' => [429, rate_limited_exception::class],
+            'refused' => [429, service_refused_exception::class],
             'bad request' => [400, permanent_exception::class],
         ];
     }
@@ -353,8 +354,8 @@ final class source_test extends \advanced_testcase {
 
         try {
             (new crossref())->check(self::reference());
-            $this->fail('Expected a rate_limited_exception');
-        } catch (rate_limited_exception $e) {
+            $this->fail('Expected a service_refused_exception');
+        } catch (service_refused_exception $e) {
             $this->assertSame(120, $e->get_retry_after());
         }
     }
@@ -368,9 +369,9 @@ final class source_test extends \advanced_testcase {
 
         try {
             (new crossref())->check(self::reference());
-            $this->fail('Expected a rate_limited_exception');
-        } catch (rate_limited_exception $e) {
-            $this->assertSame(rate_limited_exception::MAX_RETRY_AFTER, $e->get_retry_after());
+            $this->fail('Expected a service_refused_exception');
+        } catch (service_refused_exception $e) {
+            $this->assertSame(service_refused_exception::MAX_RETRY_AFTER, $e->get_retry_after());
         }
     }
 
@@ -457,12 +458,81 @@ final class source_test extends \advanced_testcase {
     }
 
     /**
-     * Rate limiting is not routed around by trying the next source.
+     * A database refusing outright does not stop the others being asked.
+     *
+     * This is the difference between a submission that finishes and one that does not. Semantic
+     * Scholar answers 429 while it is overloaded even to a keyed caller pacing itself well inside
+     * the documented allowance, and it sits last in the chain: treating that as a reason to abandon
+     * the search would throw away the answers the earlier databases had already given.
      */
-    public function test_chain_propagates_rate_limiting(): void {
+    public function test_chain_carries_on_when_a_source_refuses(): void {
         $this->resetAfterTest();
         set_config('sources', 'crossref,openalex', 'assignsubmission_refchecker');
-        $this->mock_responses([new Response(429, ['Retry-After' => '30'], '')]);
+        $this->mock_responses([
+            new Response(429, ['Retry-After' => '30'], ''),
+            new Response(200, [], self::openalex_body()),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame('openalex', $result['source']);
+        $this->assertNotSame(match_status::NOTFOUND, $result['matchstatus']);
+        $this->assertSame(['crossref'], $result['unavailable']);
+    }
+
+    /**
+     * A refusal stands its source down from the very first one.
+     *
+     * Unlike a 500, which might be a blip worth tolerating once, a refusal is the service saying
+     * something definite. Asking again on the next reference is how a service that was merely busy
+     * decides to start blocking the site properly.
+     */
+    public function test_a_refusal_stands_the_source_down_immediately(): void {
+        $this->resetAfterTest();
+        set_config('sources', 'crossref,openalex', 'assignsubmission_refchecker');
+        $this->mock_responses([
+            new Response(429, ['Retry-After' => '300'], ''),
+            new Response(200, [], self::openalex_body()),
+        ]);
+
+        chain::from_config()->check(self::reference());
+
+        $this->assertTrue(circuit_breaker::is_open('crossref'));
+        // At least as long as the service asked for, rather than the breaker's opening backoff.
+        $this->assertGreaterThan(circuit_breaker::BASE_BACKOFF, circuit_breaker::remaining('crossref'));
+    }
+
+    /**
+     * Every database refusing is still a reason to try again later.
+     *
+     * Nothing was searched, so "not found" would be a claim about a lookup that never happened.
+     * This is a transient failure of the reference rather than a pause of the whole task: the
+     * reference's own attempt budget bounds it.
+     */
+    public function test_chain_retries_when_every_source_refuses(): void {
+        $this->resetAfterTest();
+        set_config('sources', 'crossref,openalex', 'assignsubmission_refchecker');
+        $this->mock_responses([
+            new Response(429, [], ''),
+            new Response(429, [], ''),
+        ]);
+
+        $this->expectException(service_refused_exception::class);
+        chain::from_config()->check(self::reference());
+    }
+
+    /**
+     * The pacer declining to send anything still stops the chain.
+     *
+     * The one case that is genuinely about our own request rate rather than any one database, so
+     * routing around it by asking the next source would defeat the point.
+     */
+    public function test_chain_propagates_the_pacers_refusal(): void {
+        $this->resetAfterTest();
+        set_config('sources', 'crossref,openalex', 'assignsubmission_refchecker');
+        // Far enough ahead that the pacer hands the wait back rather than sleeping through it.
+        set_config('rateinterval_crossref', 60000, 'assignsubmission_refchecker');
+        rate_limiter::throttle('crossref');
 
         $this->expectException(rate_limited_exception::class);
         chain::from_config()->check(self::reference());

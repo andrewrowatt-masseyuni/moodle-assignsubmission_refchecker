@@ -16,6 +16,7 @@
 
 namespace assignsubmission_refchecker\task;
 
+use assignsubmission_refchecker\local\debug_log;
 use assignsubmission_refchecker\local\extractor;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
@@ -24,6 +25,7 @@ use assignsubmission_refchecker\local\text_mode;
 use assignsubmission_refchecker\local\text_submission;
 use core\task\adhoc_task;
 use core\task\manager;
+use core_text;
 use stdClass;
 use stored_file;
 
@@ -84,8 +86,16 @@ class extract_references extends adhoc_task {
         $text = $this->submitted_text($assign, $submission);
         $files = $text === '' ? $this->candidate_files($assign, $submission) : [];
 
+        debug_log::log('extract.start', [
+            'submission' => (int) $submission->id,
+            'generation' => (int) $job->generation,
+            'pastedchars' => core_text::strlen($text),
+            'files' => array_map(static fn($file) => $file->get_filename(), $files),
+        ]);
+
         if ($text === '' && !$files) {
             mtrace('  Nothing scannable was submitted.');
+            debug_log::log('extract.nothing', ['submission' => (int) $submission->id]);
             job_manager::set_status($job, job_status::NOTAPPLICABLE);
             return;
         }
@@ -110,6 +120,10 @@ class extract_references extends adhoc_task {
 
         if (!$references) {
             mtrace('  No reference list could be found.');
+            debug_log::log('extract.norefs', [
+                'submission' => (int) $submission->id,
+                'from' => $text !== '' ? 'pasted' : 'files',
+            ]);
             job_manager::set_status($job, job_status::NOREFS, ['contenthash' => $contenthash]);
             return;
         }
@@ -117,7 +131,28 @@ class extract_references extends adhoc_task {
         $maxreferences = $this->max_references($assign);
         $truncated = count($references) > $maxreferences;
         if ($truncated) {
+            debug_log::log('extract.truncated', [
+                'submission' => (int) $submission->id,
+                'found' => count($references),
+                'kept' => $maxreferences,
+            ]);
             $references = array_slice($references, 0, $maxreferences);
+        }
+
+        // One line per reference, which is the whole point of turning this on: an extraction that
+        // split a list in the wrong place is invisible from the counts alone.
+        debug_log::log('extract.heading', [
+            'submission' => (int) $submission->id,
+            'heading' => $heading ?? '',
+            'count' => count($references),
+        ]);
+        foreach (array_values($references) as $index => $reference) {
+            debug_log::log('extract.reference', [
+                'submission' => (int) $submission->id,
+                'n' => $index + 1,
+                'sourcefile' => $reference['sourcefile'] ?? '',
+                'raw' => $reference['raw'] ?? '',
+            ]);
         }
 
         job_manager::store_references($job, $references, [
@@ -133,6 +168,10 @@ class extract_references extends adhoc_task {
 
         if ($remaining === 0) {
             mtrace('  Every reference was already in the cache.');
+            debug_log::log('extract.allcached', [
+                'submission' => (int) $submission->id,
+                'total' => (int) $job->totalrefs,
+            ]);
             job_manager::set_status($job, job_status::COMPLETE);
             $this->trigger_completed($job, $assign);
             return;
@@ -214,14 +253,35 @@ class extract_references extends adhoc_task {
 
             if ($extracted['result'] !== extractor::RESULT_OK) {
                 mtrace('  Skipped ' . $file->get_filename() . ': ' . $extracted['result']);
+                debug_log::log('extract.file', [
+                    'file' => $file->get_filename(),
+                    'mimetype' => (string) $file->get_mimetype(),
+                    'bytes' => (int) $file->get_filesize(),
+                    'result' => $extracted['result'],
+                ]);
                 continue;
             }
+
+            debug_log::log('extract.file', [
+                'file' => $file->get_filename(),
+                'mimetype' => (string) $file->get_mimetype(),
+                'bytes' => (int) $file->get_filesize(),
+                'result' => $extracted['result'],
+                'chars' => core_text::strlen((string) $extracted['text']),
+            ]);
 
             $parsed = reference_parser::parse($extracted['text']);
             if (!$parsed['found']) {
                 mtrace('  No reference list in ' . $file->get_filename() . '.');
+                debug_log::log('extract.nolist', ['file' => $file->get_filename()]);
                 continue;
             }
+
+            debug_log::log('extract.parsed', [
+                'file' => $file->get_filename(),
+                'heading' => $parsed['heading'],
+                'count' => count($parsed['references']),
+            ]);
 
             if ($heading === '') {
                 $heading = $parsed['heading'];

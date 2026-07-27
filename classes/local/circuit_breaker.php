@@ -75,29 +75,46 @@ class circuit_breaker {
      * The first failure or two are ignored: services hiccup, and standing one down on a single
      * blip would lose answers it could have given.
      *
+     * That tolerance is for failures we have to infer, such as a 500 or a timeout. A source that
+     * refuses a request outright has told us something definite, so it passes a minimum stand-down
+     * and is left alone from the first refusal: asking again straight away is how a service that
+     * was merely busy decides to start blocking us properly.
+     *
      * @param string $source
+     * @param int $minimumstanddown Seconds to stand the source down for regardless of how many
+     *      failures it has accumulated. Zero to use the ordinary tolerate-then-back-off schedule.
      * @return void
      */
-    public static function record_failure(string $source): void {
+    public static function record_failure(string $source, int $minimumstanddown = 0): void {
         global $DB;
 
         $record = self::record_for($source);
         $failures = (int) $record->failures + 1;
 
-        $skipuntil = 0;
+        $backoff = 0;
         if ($failures >= self::FAILURES_BEFORE_BACKOFF) {
             $backoff = min(
                 self::BASE_BACKOFF * (2 ** ($failures - self::FAILURES_BEFORE_BACKOFF)),
                 self::MAX_BACKOFF,
             );
-            $skipuntil = time() + $backoff;
         }
+
+        // Repeated refusals still escalate: the floor is where a stand-down starts, not a cap.
+        $standdown = max($backoff, $minimumstanddown);
+        $skipuntil = $standdown ? time() + $standdown : 0;
 
         $DB->update_record(rate_limiter::TABLE, (object) [
             'id' => $record->id,
             'failures' => $failures,
             'skipuntil' => $skipuntil,
             'timemodified' => time(),
+        ]);
+
+        debug_log::log('breaker.failure', [
+            'source' => $source,
+            'failures' => $failures,
+            // Zero until the tolerated failures are used up, then the length of the stand-down.
+            'standdown' => $standdown,
         ]);
     }
 
@@ -125,6 +142,8 @@ class circuit_breaker {
             'skipuntil' => 0,
             'timemodified' => time(),
         ]);
+
+        debug_log::log('breaker.recovered', ['source' => $source]);
     }
 
     /**

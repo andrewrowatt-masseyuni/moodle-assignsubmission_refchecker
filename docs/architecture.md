@@ -327,8 +327,11 @@ For each source in turn:
 
 - If the circuit breaker is **open** for that source, skip it and note it as unavailable.
 - Call `$source->check($reference)`; record success/failure with the circuit breaker.
-- `rate_limited_exception` is **re-thrown immediately** — backpressure is the caller's decision to
-  act on, not something to route around.
+- `rate_limited_exception` is **re-thrown immediately** — that is our own pacer, so nothing was
+  sent and asking the next source would defeat the point.
+- `service_refused_exception` stands the source down for at least its `Retry-After`, notes it
+  unavailable, and the chain **moves on** — one database turning us away is not a reason to stop
+  asking the others (§4.6).
 - `transient_exception` is remembered, the source is noted as unavailable, and the chain moves on.
 - `permanent_exception` is logged at `DEBUG_DEVELOPER` and the chain moves on.
 - A returned record is scored by `matcher::score()`.
@@ -396,7 +399,7 @@ from HTTP outcome to exception kind, so no task ever has to interpret a status c
 |---|---|---|
 | Network error, DNS failure, timeout | `transient_exception` | source noted unavailable; reference requeued |
 | `404` | `null` (not an error) | a direct lookup for something not indexed |
-| `429` | `rate_limited_exception(Retry-After)` | task reschedules itself for that moment |
+| `429` | `service_refused_exception(Retry-After)` | source stood down for at least that long; chain moves on |
 | `5xx` | `transient_exception` | routine for DBLP, which signals overload with 500 |
 | other `4xx` | `permanent_exception` | logged; chain moves on |
 | body not JSON/XML | `permanent_exception` | logged; chain moves on |
@@ -512,14 +515,19 @@ computes the temporal statistics (oldest/newest/average year) and citation total
 
 ### 4.6 Failure handling, retries and reconciliation
 
-There are four independent safety nets, each bounding a different failure mode:
+There are five independent safety nets, each bounding a different failure mode:
 
 | Mechanism | Constant / setting | Bounds |
 |---|---|---|
 | Per-reference attempt budget | `MAX_REFERENCE_ATTEMPTS = 3` | one stubborn reference holding a submission at "15 of 16" forever |
 | Per-reference retry delay | `RETRY_DELAY = 120 s` | a requeued reference being picked straight back up and burning its whole budget in seconds |
 | Per-source circuit breaker | §5.2 | a sick database costing one failed request *per reference* |
+| Per-job deferral budget | `MAX_CONSECUTIVE_DEFERRALS = 20` | a pacer that never releases a slot leaving a job rescheduling itself indefinitely |
 | Per-job requeue budget | `MAX_REQUEUES = 1`, `staletimeout` (6 h) | a job stalled forever because its adhoc task exhausted the task API's retries and was dropped |
+
+The deferral budget exists because the other four cannot see the failure it covers: a paused run
+spends no reference attempt, contacts no source, and refreshes the job's `timemodified` on its way
+past, so the reconciler never finds it stale and always sees a successor queued.
 
 `check_one()` never lets a single reference bring the task down. A `permanent_exception` or a
 `transient_exception` (nothing answered) calls `record_reference_failure()`, which increments
@@ -531,21 +539,58 @@ An **empty chunk does not mean the job is done**: `count_queued_references()` di
 re-queues itself after `RETRY_DELAY` rather than reporting the submission complete with references
 still outstanding.
 
-A `rate_limited_exception` reaching the task is handled as **backpressure, not a fault**: counters
-are recalculated, the task re-queues itself for the moment the service nominated, and it returns
-normally. Throwing would work but would also inflate Moodle's own fail delay for a completely
-routine event.
+#### Two things that look like rate limiting
 
-> **Catch it before `transient_exception`, always.** `rate_limited_exception` *extends*
-> `transient_exception`, so any handler that lists the parent first swallows every rate limit as an
-> ordinary fault. `check_one()` catches and re-throws it explicitly for this reason, as does
-> `chain::check()`. Getting this wrong is silent and expensive: the task never backs off, so it
-> keeps calling a service that just asked it to stop; each 429 spends one of the reference's three
-> attempts; and after three the reference is recorded as **not found** with the rate-limit message
-> shown against it — a wrong answer presented to a student for a problem that was never theirs.
-> `test_rate_limiting_reschedules_without_throwing()` asserts that nothing at all is written to the
-> reference rows, which is what actually pins the ordering; the reschedule assertions do not, since
-> the task re-queues itself either way and only the delay differs.
+Being turned away by a database and declining to send a request are different events with different
+blast radii, and conflating them cost a release. They have separate exception types.
+
+| | `service_refused_exception` | `rate_limited_exception` |
+|---|---|---|
+| Thrown by | `http_source::send()`, on HTTP 429 | `rate_limiter::throttle()` |
+| Means | *that database* turned us away | *we* are not willing to send yet |
+| Scope | one source | every source, every reference |
+| Handled by | circuit breaker; chain continues | task pauses and re-queues |
+| Bounded by | `MAX_REFERENCE_ATTEMPTS` | `MAX_CONSECUTIVE_DEFERRALS` |
+
+A **429 is not reliably a statement about our request rate.** Semantic Scholar returns one to a
+keyed caller pacing itself at a third of its documented 1 req/s allowance, minutes after the
+previous request: it is how the service reports being overloaded, exactly as DBLP reports the same
+condition with a 500. So it is treated as that source being unwell — `record_failure()` with the
+`Retry-After` as a *minimum* stand-down, added to `unavailable`, and the chain carries on down the
+list. The degraded path then does the rest: the answer the healthy databases gave is recorded, kept
+out of the shared cache, and given another attempt first.
+
+> **Why not pause the task on a 429.** Semantic Scholar sits last in the chain, so by the time it
+> refuses, CrossRef, OpenAlex and arXiv have already answered. Pausing there discards all of it and
+> re-runs the whole chain a minute later, forever: the reference spends no attempt, `pause()`
+> refreshes `timemodified` on its way past, and `reconcile_jobs` skips the job because a successor
+> is always queued. A submission stuck at "23 of 26" that nothing in the plugin can see — which is
+> precisely the failure mode `reconcile_jobs` exists to close.
+> `test_a_persistently_refused_source_still_finishes_the_job()` is the guard.
+
+A `rate_limited_exception` reaching the task *is* handled as **backpressure, not a fault**: counters
+are recalculated, the task re-queues itself for the moment the slot comes free, and it returns
+normally. Throwing would work but would also inflate Moodle's own fail delay for a routine event.
+Because nothing was sent, no reference spends an attempt — which leaves the run with no bound of its
+own, hence `deferrals` on the job row and `MAX_CONSECUTIVE_DEFERRALS`. Reaching it means a
+configured interval no site could make progress against, so the job is failed with `pacerstalled`
+rather than left rescheduling itself.
+
+> **Catch both before `transient_exception`, always.** Both *extend* `transient_exception`, so any
+> handler that lists the parent first swallows them as ordinary faults. `chain::check()` catches
+> both explicitly; `check_one()` catches `rate_limited_exception`, which is the only one that
+> reaches it. Getting the pacer's case wrong is silent and expensive: the reference spends one of
+> its three attempts on a search that never happened, and after three it is recorded as **not
+> found** with an internal message shown against it — a wrong answer presented to a student for a
+> problem that was never theirs. `test_the_pacer_pauses_without_touching_the_references()` asserts
+> that nothing at all is written to the reference rows, which is what actually pins the ordering;
+> the reschedule assertions do not, since the task re-queues itself either way.
+
+**Pacing is per site, the limit is per key.** `rate_limiter` reserves slots in a table in *this*
+Moodle's database. Two instances sharing one API key each pace themselves in ignorance of the
+other and their combined rate is what the service sees. If refusals look inexplicable, check
+whether the key is configured anywhere else before concluding the service is at fault; the
+`keyed` field on `http.request` in the activity log records whether a key was sent at all.
 
 Every task run begins with the **generation guard** in
 [job_task.php](../classes/task/job_task.php): the job is re-read straight from the database
@@ -645,7 +690,11 @@ Default intervals, all overridable per source in the settings page:
 Per source, stored in the same table (`failures`, `skipuntil`).
 
 - The first **2** failures are ignored (`FAILURES_BEFORE_BACKOFF`) — services hiccup, and standing
-  one down on a single blip loses answers it could have given.
+  one down on a single blip loses answers it could have given. That tolerance is for failures we
+  have to infer, such as a 500 or a timeout. A **refusal** passes a minimum stand-down and skips the
+  tolerance (`record_failure($source, $minimumstanddown)`): the service has told us something
+  definite, and asking again straight away is how one that was merely busy starts blocking us
+  properly. The minimum is a floor, not a cap — repeated refusals still escalate as below.
 - From the second failure the source is stood down for
   `min(60 × 2^(failures − 2), 900)` seconds — **60 s, 120 s, 240 s, 480 s, then capped at 900 s**
   (`BASE_BACKOFF`, `MAX_BACKOFF`). However bad things get, it is retried at least every 15 minutes.
@@ -660,10 +709,13 @@ answers from the healthy services are still used.
 
 ### 5.3 Honouring `429` / `Retry-After`
 
-`http_source::send()` maps `429` to `rate_limited_exception`, parsing `Retry-After` as either a
+`http_source::send()` maps `429` to `service_refused_exception`, parsing `Retry-After` as either a
 number of seconds or an HTTP date. Missing or unparseable ⇒ `DEFAULT_RETRY_AFTER` = 60 s. The value
-is clamped to `[1, 3600]` by `get_retry_after()`. `chain::check()` re-throws it untouched and
-`check_references` reschedules itself for exactly that moment.
+is clamped to `[1, 3600]` by `get_retry_after()`, and `chain::check()` passes it to the circuit
+breaker as the **minimum** stand-down for that source before carrying on down the chain.
+
+It does **not** pause the task. See [§4.6](#two-things-that-look-like-rate-limiting) for why, and
+for the distinction between a service refusing us and our own pacer declining to send.
 
 ### 5.4 Result cache
 
@@ -886,7 +938,7 @@ The unit of work: **exactly one row per `assign_submission`**, enforced by a `fo
 | Group | Columns | Notes |
 |---|---|---|
 | Identity | `assignment`, `submission` | `submission` already carries userid, groupid and attemptnumber, so none are duplicated here |
-| Lifecycle | `status`, `generation`, `requeues` | `generation` is bumped on every re-trigger; tasks abort when it no longer matches their custom data. `requeues` bounds the reconciler. |
+| Lifecycle | `status`, `generation`, `requeues`, `deferrals` | `generation` is bumped on every re-trigger; tasks abort when it no longer matches their custom data. `requeues` bounds the reconciler. `deferrals` counts consecutive runs the pacer put off and is reset by any run that gets through (§4.6). |
 | Input fingerprint | `contenthash` | sha1 of the sorted source-file content hashes — an unchanged resubmission skips re-checking |
 | Counters | `totalrefs`, `checkedrefs`, `verifiedrefs`, `partialrefs`, `mismatchrefs`, `notfoundrefs`, `issuerefs`, `retractedrefs`, `predatoryrefs`, `totalcitations` | Denormalised so the grading table and dashboard render with no extra queries. Always recomputed by one aggregate query, never incremented. |
 | Statistics | `oldestyear`, `newestyear`, `avgyear`, `avgcitations` | Nullable; `avgyear` / `avgcitations` are `number(6,2)` / `number(10,2)` |

@@ -16,10 +16,11 @@ Feature: Configuring what students are told about their references
       | user     | course | role           |
       | student1 | C1     | student        |
       | teacher1 | C1     | editingteacher |
+    And I change the window size to "large"
 
   @javascript
   Scenario: The display settings appear only once reference checking is enabled
-    Given I am on the "Course 1" course page logged in as teacher1
+    And I am on the "Course 1" course page logged in as teacher1
     And I turn editing mode on
     When I add a "assign" activity to course "Course 1" section "1"
     And I expand all fieldsets
@@ -32,8 +33,8 @@ Feature: Configuring what students are told about their references
   @javascript
   Scenario: The chosen display level is kept
     Given the following "activities" exist:
-      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_refchecker_enabled |
-      | assign   | C1     | Essay | 1                             | 1                                    |
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   |
     And I am on the "Essay" Activity page logged in as teacher1
     When I navigate to "Settings" in current page administration
     And I expand all fieldsets
@@ -45,16 +46,16 @@ Feature: Configuring what students are told about their references
 
   Scenario: Students are told what the check does before they submit
     Given the following "activities" exist:
-      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_refchecker_enabled |
-      | assign   | C1     | Essay | 1                             | 1                                    |
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   |
     When I am on the "Essay" Activity page logged in as student1
     Then I should see "Your reference list will be checked automatically"
     And I should see "It is not a plagiarism check"
 
   Scenario: Nothing is shown when reference checking is switched off
     Given the following "activities" exist:
-      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_refchecker_enabled |
-      | assign   | C1     | Essay | 1                             | 0                                    |
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 0                                   |
     When I am on the "Essay" Activity page logged in as student1
     Then I should not see "Your reference list will be checked automatically"
 

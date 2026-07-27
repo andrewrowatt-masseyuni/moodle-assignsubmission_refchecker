@@ -16,10 +16,11 @@ Feature: Submitting a reference list as plain text
       | user     | course | role           |
       | student1 | C1     | student        |
       | teacher1 | C1     | editingteacher |
+    And I change the window size to "large"
 
   @javascript
   Scenario: The setting appears only once reference checking is enabled, and defaults to No
-    Given I am on the "Course 1" course page logged in as teacher1
+    And I am on the "Course 1" course page logged in as teacher1
     And I turn editing mode on
     When I add a "assign" activity to course "Course 1" section "1"
     And I expand all fieldsets
@@ -31,8 +32,8 @@ Feature: Submitting a reference list as plain text
   @javascript
   Scenario: The chosen setting is kept
     Given the following "activities" exist:
-      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_refchecker_enabled |
-      | assign   | C1     | Essay | 1                             | 1                                   |
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   |
     And I am on the "Essay" Activity page logged in as teacher1
     When I navigate to "Settings" in current page administration
     And I expand all fieldsets
@@ -44,8 +45,8 @@ Feature: Submitting a reference list as plain text
 
   Scenario: No References box is offered by default
     Given the following "activities" exist:
-      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_refchecker_enabled |
-      | assign   | C1     | Essay | 1                             | 1                                   |
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   |
     And I am on the "Essay" Activity page logged in as student1
     When I press "Add submission"
     Then I should not see "Paste in your reference list here."
@@ -67,8 +68,8 @@ Feature: Submitting a reference list as plain text
 
   Scenario: A required reference list cannot be left empty
     Given the following "activities" exist:
-      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_refchecker_enabled | assignsubmission_refchecker_requiretext |
-      | assign   | C1     | Essay | 1                             | 1                                   | required                                |
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled | assignsubmission_refchecker_requiretext |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   | required                                |
     And I am on the "Essay" Activity page logged in as student1
     When I press "Add submission"
     And I press "Save changes"

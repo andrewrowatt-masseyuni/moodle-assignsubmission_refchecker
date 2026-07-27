@@ -1,0 +1,218 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+    },
+    "options": {
+        "env": {
+            "COMPOSE_PROJECT_NAME": "moodle405_assignsubmission_refchecker",
+            "MOODLE_DOCKER_WWWROOT": "/home/arowatt/moodle405_assignsubmission_refchecker",
+            "MOODLE_DOCKER_DB": "pgsql"
+        }
+    },
+    "tasks": [
+        {
+            "label": "PHP Lint",
+            "type": "shell",
+            "command": "../moodle-plugin-ci/bin/moodle-plugin-ci phplint ./mod/assign/submission/refchecker",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker"
+            }
+        },
+        {
+            "label": "PHP Mess Detector",
+            "type": "shell",
+            "command": "../moodle-plugin-ci/bin/moodle-plugin-ci phpmd ./mod/assign/submission/refchecker",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker"
+            }
+        },
+        {
+            "label": "mustache",
+            "type": "shell",
+            "command": "../moodle-plugin-ci/bin/moodle-plugin-ci mustache ./mod/assign/submission/refchecker",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker"
+            }
+        },
+        {
+            "label": "grunt amd",
+            "type": "shell",
+            "command": "grunt --max-lint-warnings=0 amd",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker/mod/assign/submission/refchecker"
+            }
+        },
+        {
+            "label": "grunt yui",
+            "type": "shell",
+            "command": "grunt --max-lint-warnings=0 yui",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker/mod/assign/submission/refchecker"
+            }
+        },
+        {
+            "label": "grunt gherkinlint",
+            "type": "shell",
+            "command": "grunt --max-lint-warnings=0 gherkinlint",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker/mod/assign/submission/refchecker"
+            }
+        },
+        {
+            "label": "grunt stylelint",
+            "type": "shell",
+            "command": "grunt --max-lint-warnings=0 stylelint",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker/mod/assign/submission/refchecker"
+            }
+        },
+        {
+            "label": "phpcbf",
+            "type": "shell",
+            "command": "../moodle-plugin-ci/bin/moodle-plugin-ci phpcbf ./mod/assign/submission/refchecker",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker"
+            }
+        },
+        {
+            "label": "phpcs",
+            "type": "shell",
+            "command": "../moodle-plugin-ci/bin/moodle-plugin-ci phpcs ./mod/assign/submission/refchecker",
+            "group": "test",
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker"
+            }
+        },
+
+        
+        {
+            "label": "PHPDoc checker",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php local/moodlecheck/cli/moodlecheck.php -p=mod/assign/submission/refchecker -f=text | tee /dev/stderr | grep -vz error",
+            "group": "test"
+        },
+        {
+            "label": "Run phpunit",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver vendor/bin/phpunit mod/assign/submission/refchecker/tests/. --test-suffix=_test.php 2>&1 | tee /dev/tty | grep -q 'Moodle PHPUnit environment was initialised for different version' && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/tool/phpunit/cli/init.php && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver vendor/bin/phpunit mod/assign/submission/refchecker/tests/. --test-suffix=_test.php",
+            "group": "test",
+            "presentation": {
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run phpunit - privacy",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver vendor/bin/phpunit privacy/tests/privacy/provider_test.php",
+            "group": "test",
+            "presentation": {
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run behat tests",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec -u www-data webserver php admin/tool/behat/cli/run.php --tags=@assignsubmission_refchecker --format progress --format moodle_screenshot 2>&1 | tee /dev/tty | grep -q 'behat test site is outdated' && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/tool/behat/cli/init.php && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec -u www-data webserver php admin/tool/behat/cli/run.php --tags=@assignsubmission_refchecker --format progress --format moodle_screenshot",
+            "group": "test",
+            "presentation": {
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Run all tests",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "PHP Lint",
+                "PHP Mess Detector",
+                "mustache",
+                "phpcbf",
+                "phpcs",
+                "PHPDoc checker",
+                "grunt yui",
+                "grunt stylelint",
+                "Run phpunit",
+                "Run behat tests",
+                "Run phpunit - privacy"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "phpunit-init",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/tool/phpunit/cli/init.php",
+            "group": "build"
+        },
+        {
+            "label": "behat-init",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/tool/behat/cli/init.php",
+            "group": "build"
+        },
+        {
+            "label": "Init all tests",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "phpunit-init",
+                "behat-init"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Uninstall plugin",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/cli/uninstall_plugins.php --plugins=assignsubmission_refchecker --run",
+                       "presentation": {
+                "panel": "dedicated",
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Install plugin (via Moodle upgrade)",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/cli/upgrade.php --non-interactive --verbose-settings",
+            "group": "none",
+            "presentation": {
+                "panel": "dedicated",
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Purge cache",
+            "type": "shell",
+            "command": "/home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/cli/purge_caches.php",
+            "group": "none",
+            "presentation": {
+                "panel": "dedicated",
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "grunt & Purge cache",
+            "type": "shell",
+            "command": "grunt amd && /home/arowatt/moodle-docker/bin/moodle-docker-compose exec webserver php admin/cli/purge_caches.php",
+            "group": "none",
+            "presentation": {
+                "panel": "dedicated",
+            },
+            "options": {
+                "cwd": "/home/arowatt/moodle405_assignsubmission_refchecker/mod/assign/submission/refchecker"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

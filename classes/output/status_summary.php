@@ -68,6 +68,11 @@ class status_summary implements renderable, templatable {
         if ($this->job === null) {
             return false;
         }
+        if (display_level::shows_nothing($this->level)) {
+            // Not even the status line. The level is the effective one, so it can only be NONE for
+            // someone without the capability: a teacher is never silenced by it.
+            return false;
+        }
         if ($this->job->status === job_status::NOTAPPLICABLE || $this->job->status === job_status::CANCELLED) {
             return $this->isteacher;
         }
@@ -87,9 +92,7 @@ class status_summary implements renderable, templatable {
         $job = $this->job;
 
         $status = $job->status;
-        $showcounts = $this->level >= display_level::SUMMARY
-            && $status === job_status::COMPLETE
-            && (int) $job->totalrefs > 0;
+        $counts = $this->counts();
 
         return [
             'submissionid' => (int) $job->submission,
@@ -109,33 +112,67 @@ class status_summary implements renderable, templatable {
                     'assignsubmission_refchecker',
                 )
                 : '',
-            'showcounts' => $showcounts,
-            'counts' => $showcounts ? [
-                [
-                    'label' => get_string('dashboard_verified', 'assignsubmission_refchecker'),
-                    'count' => (int) $job->verifiedrefs,
-                    'labelclass' => 'verified',
-                ],
-                [
-                    'label' => get_string('dashboard_partial', 'assignsubmission_refchecker'),
-                    'count' => (int) $job->partialrefs,
-                    'labelclass' => 'partial',
-                ],
-                [
-                    'label' => get_string('dashboard_mismatch', 'assignsubmission_refchecker'),
-                    'count' => (int) $job->mismatchrefs,
-                    'labelclass' => 'mismatch',
-                ],
-                [
-                    'label' => get_string('dashboard_notfound', 'assignsubmission_refchecker'),
-                    'count' => (int) $job->notfoundrefs,
-                    'labelclass' => 'notfound',
-                ],
-            ] : [],
+            'showcounts' => $counts !== [],
+            'counts' => $counts,
             // Operational detail is never exposed to students.
             'showdiagnostics' => $this->isteacher && !empty($job->errorcode),
             'errorcode' => $this->isteacher ? (string) $job->errorcode : '',
             'errormessage' => $this->isteacher ? (string) $job->errormessage : '',
+        ];
+    }
+
+    /**
+     * The badges shown under the status line, if any.
+     *
+     * At the status level, the number of references found and nothing else: that is a fact about the
+     * student's own submission rather than a result of checking it. At summary level or above, once
+     * checking has finished, one badge per match status — which says everything the bare total would
+     * and more, so the two never both appear.
+     *
+     * @return array<int, array{label: string, count: int, labelclass: string}>
+     */
+    protected function counts(): array {
+        $job = $this->job;
+
+        if ((int) $job->totalrefs === 0) {
+            return [];
+        }
+
+        if ($this->level === display_level::STATUS_ONLY) {
+            return [
+                [
+                    'label' => get_string('dashboard_total', 'assignsubmission_refchecker'),
+                    'count' => (int) $job->totalrefs,
+                    'labelclass' => 'total',
+                ],
+            ];
+        }
+
+        if ($this->level < display_level::SUMMARY || $job->status !== job_status::COMPLETE) {
+            return [];
+        }
+
+        return [
+            [
+                'label' => get_string('dashboard_verified', 'assignsubmission_refchecker'),
+                'count' => (int) $job->verifiedrefs,
+                'labelclass' => 'verified',
+            ],
+            [
+                'label' => get_string('dashboard_partial', 'assignsubmission_refchecker'),
+                'count' => (int) $job->partialrefs,
+                'labelclass' => 'partial',
+            ],
+            [
+                'label' => get_string('dashboard_mismatch', 'assignsubmission_refchecker'),
+                'count' => (int) $job->mismatchrefs,
+                'labelclass' => 'mismatch',
+            ],
+            [
+                'label' => get_string('dashboard_notfound', 'assignsubmission_refchecker'),
+                'count' => (int) $job->notfoundrefs,
+                'labelclass' => 'notfound',
+            ],
         ];
     }
 }

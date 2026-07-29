@@ -30,14 +30,17 @@ use context;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class display_level {
-    /** @var int The status line only. */
-    public const STATUS_ONLY = 0;
+    /** @var int Nothing at all: every student facing part of the plugin is suppressed. */
+    public const NONE = 0;
+
+    /** @var int How many references were found, and how the check is progressing. No results. */
+    public const STATUS_ONLY = 1;
 
     /** @var int The status line plus aggregate counts. No individual references. */
-    public const SUMMARY = 1;
+    public const SUMMARY = 2;
 
     /** @var int Everything, including the result for each individual reference. */
-    public const FULL = 2;
+    public const FULL = 3;
 
     /** @var string Capability that unconditionally grants the full report. */
     public const CAP_VIEWFULLREPORT = 'assignsubmission/refchecker:viewfullreport';
@@ -60,13 +63,30 @@ class display_level {
     /**
      * Clamp an arbitrary stored value to a level we know about.
      *
+     * Anything unrecognised becomes {@see NONE}, the most restrictive level, so that a value we
+     * cannot interpret never discloses more than the teacher asked for.
+     *
      * @param int $level
      * @return int
      */
     public static function sanitise(int $level): int {
-        return in_array($level, [self::STATUS_ONLY, self::SUMMARY, self::FULL], true)
+        return in_array($level, [self::NONE, self::STATUS_ONLY, self::SUMMARY, self::FULL], true)
             ? $level
-            : self::STATUS_ONLY;
+            : self::NONE;
+    }
+
+    /**
+     * Whether this level suppresses everything the plugin would otherwise tell a student.
+     *
+     * At {@see NONE} that includes the assignment page header, so the site's student information and
+     * privacy notice go with it: a student who is told nothing about the check is not told that it is
+     * happening either.
+     *
+     * @param int $level
+     * @return bool
+     */
+    public static function shows_nothing(int $level): bool {
+        return self::sanitise($level) === self::NONE;
     }
 
     /**
@@ -76,6 +96,7 @@ class display_level {
      */
     public static function menu(): array {
         return [
+            self::NONE => get_string('studentdisplay_none', 'assignsubmission_refchecker'),
             self::STATUS_ONLY => get_string('studentdisplay_status', 'assignsubmission_refchecker'),
             self::SUMMARY => get_string('studentdisplay_summary', 'assignsubmission_refchecker'),
             self::FULL => get_string('studentdisplay_full', 'assignsubmission_refchecker'),
@@ -95,6 +116,9 @@ class display_level {
     /**
      * The sentence added to the student information text describing what this user will see.
      *
+     * Empty at {@see NONE}, which has no sentence to offer: the header that would have carried it is
+     * not rendered for that student at all.
+     *
      * @param int $level
      * @return string
      */
@@ -102,8 +126,10 @@ class display_level {
         $key = match (self::sanitise($level)) {
             self::FULL => 'viewheader_level_full',
             self::SUMMARY => 'viewheader_level_summary',
-            default => 'viewheader_level_status',
+            self::STATUS_ONLY => 'viewheader_level_status',
+            default => '',
         };
-        return get_string($key, 'assignsubmission_refchecker');
+
+        return $key === '' ? '' : get_string($key, 'assignsubmission_refchecker');
     }
 }

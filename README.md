@@ -25,7 +25,8 @@ cited. Teachers get a per-reference report alongside the submission when grading
 - Checking runs entirely in Moodle cron as adhoc tasks — the student's submission is never delayed.
 - Site-wide result cache, per-source rate limiting, circuit breakers and a task concurrency ceiling,
   so a whole cohort submitting at a deadline stays inside the external services' limits.
-- Per-assignment control of how much students see: status only, summary, or the full report.
+- Per-assignment control of how much students see: nothing at all, status only, summary, or the full
+  report.
 - Teachers can re-run a check from the report.
 - Full Moodle integration: capabilities, privacy provider, backup and restore, event logging, a
   system status check and a CLI diagnostic.
@@ -100,14 +101,16 @@ plugins > Reference Checker**:
 
 - **Student information** - HTML shown on the assignment page explaining what the check does.
 - **Privacy notice** - Optional HTML notice, shown on the assignment page.
-- **Default student display** - Status only (default), Summary, or Full report.
+- **Default student display** - No information, Status only (default), Summary, or Full report.
 - **Default check timing** - On submit (default) or on every save.
 - **Default require text references** - No (default), Yes - Optional, or Yes - Required.
 
 Per-assignment settings are available when editing an assignment under the **Submission types**
 section:
 
-- **Show students** - Status only, Summary, or Full report.
+- **Show students** - No information, Status only, Summary, or Full report. At **No information**
+  every student-facing part of the plugin is suppressed, including the student information and
+  privacy notice on the assignment page.
 - **Check references** - On submit for grading, or on every save including drafts.
 - **Maximum references per submission**.
 - **Require text references** - No, Yes - Optional, or Yes - Required. When enabled, students paste

@@ -52,6 +52,21 @@ Feature: Configuring what students are told about their references
     Then I should see "Your reference list will be checked automatically"
     And I should see "It is not a plagiarism check"
 
+  @javascript
+  Scenario: No information hides everything the plugin would tell a student
+    Given the following "activities" exist:
+      | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
+      | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   |
+    And I am on the "Essay" Activity page logged in as teacher1
+    And I navigate to "Settings" in current page administration
+    And I expand all fieldsets
+    And I set the field "Show students" to "No information"
+    And I press "Save and display"
+    Then I should see "Students on this assignment see: No information"
+    When I am on the "Essay" Activity page logged in as student1
+    Then I should not see "Your reference list will be checked automatically"
+    And I should not see "It is not a plagiarism check"
+
   Scenario: Nothing is shown when reference checking is switched off
     Given the following "activities" exist:
       | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |

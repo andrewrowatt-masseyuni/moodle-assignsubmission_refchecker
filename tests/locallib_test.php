@@ -418,6 +418,7 @@ final class locallib_test extends \advanced_testcase {
      */
     public static function display_level_provider(): array {
         return [
+            'no information' => [display_level::NONE],
             'status only' => [display_level::STATUS_ONLY],
             'summary' => [display_level::SUMMARY],
             'full' => [display_level::FULL],
@@ -523,6 +524,7 @@ final class locallib_test extends \advanced_testcase {
      */
     public static function showviewlink_provider(): array {
         return [
+            'no information' => [display_level::NONE, false],
             'status only' => [display_level::STATUS_ONLY, false],
             'summary' => [display_level::SUMMARY, true],
             'full' => [display_level::FULL, true],
@@ -531,6 +533,9 @@ final class locallib_test extends \advanced_testcase {
 
     /**
      * Counts are withheld from a student who is only meant to see the status.
+     *
+     * How many references were found still reaches them: that is a fact about their own submission
+     * rather than a result of checking it.
      */
     public function test_view_summary_hides_counts_at_status_only(): void {
         $this->seed_completed_job();
@@ -542,7 +547,63 @@ final class locallib_test extends \advanced_testcase {
         $output = $this->plugin()->view_summary($this->submission, $showviewlink);
 
         $this->assertStringContainsString('Complete', $output);
+        $this->assertStringContainsString('2 References', $output);
         $this->assertStringNotContainsString('Verified', $output);
+    }
+
+    /**
+     * At the "No information" level a student is shown nothing about the check at all.
+     */
+    public function test_view_summary_is_blank_at_no_information(): void {
+        $this->seed_completed_job();
+        $this->plugin()->set_config('studentdisplay', display_level::NONE);
+
+        $this->setUser($this->student);
+
+        $showviewlink = true;
+        $output = $this->plugin()->view_summary($this->submission, $showviewlink);
+
+        $this->assertSame('', $output);
+        $this->assertFalse($showviewlink);
+    }
+
+    /**
+     * The status line survives "No information" for a teacher, who is not who it withholds from.
+     */
+    public function test_teacher_still_sees_the_status_at_no_information(): void {
+        $this->seed_completed_job();
+        $this->plugin()->set_config('studentdisplay', display_level::NONE);
+
+        $this->setUser($this->teacher);
+
+        $showviewlink = false;
+        $output = $this->plugin()->view_summary($this->submission, $showviewlink);
+
+        $this->assertStringContainsString('Complete', $output);
+        $this->assertTrue($showviewlink);
+    }
+
+    /**
+     * A student's own pasted reference list is still theirs to read at "No information".
+     *
+     * The setting governs how much of the *result* they see. Withholding the text they typed would
+     * leave them unable to check what they submitted.
+     */
+    public function test_view_summary_still_offers_the_pasted_text_at_no_information(): void {
+        $this->plugin()->set_config('requiretext', text_mode::REQUIRED);
+        $this->plugin()->set_config('studentdisplay', display_level::NONE);
+        $text = $this->seed_text_submission();
+        $this->seed_completed_job();
+
+        $this->setUser($this->student);
+
+        $showviewlink = false;
+        $summary = $this->plugin()->view_summary($this->submission, $showviewlink);
+
+        $this->assertStringContainsString('A reference list has been submitted.', $summary);
+        $this->assertStringNotContainsString('Complete', $summary);
+        $this->assertTrue($showviewlink);
+        $this->assertStringContainsString($text, $this->plugin()->view($this->submission));
     }
 
     /**
@@ -579,6 +640,7 @@ final class locallib_test extends \advanced_testcase {
      */
     public static function view_leak_provider(): array {
         return [
+            'no information sees nothing' => [display_level::NONE, false],
             'status only sees nothing' => [display_level::STATUS_ONLY, false],
             'summary sees no reference text' => [display_level::SUMMARY, false],
             'full sees reference text' => [display_level::FULL, true],
@@ -642,6 +704,37 @@ final class locallib_test extends \advanced_testcase {
 
         $this->assertStringContainsString('Massey specific wording.', $output);
         $this->assertStringNotContainsString('checked automatically', $output);
+    }
+
+    /**
+     * At "No information" the student gets no header at all, privacy notice included.
+     *
+     * The whole point of the level is that the student is not told the check is happening, so a
+     * notice explaining what happens to their references would give it away.
+     */
+    public function test_view_header_is_suppressed_at_no_information(): void {
+        set_config('studentinformation', '<p>Massey specific wording.</p>', 'assignsubmission_refchecker');
+        set_config('privacynotice', '<p>Your references leave the site.</p>', 'assignsubmission_refchecker');
+        $this->plugin()->set_config('studentdisplay', display_level::NONE);
+
+        $this->setUser($this->student);
+
+        $this->assertSame('', $this->plugin()->view_header());
+    }
+
+    /**
+     * A teacher still gets the header at "No information", and is told that is what students get.
+     */
+    public function test_view_header_tells_the_teacher_students_see_nothing(): void {
+        set_config('privacynotice', '<p>Your references leave the site.</p>', 'assignsubmission_refchecker');
+        $this->plugin()->set_config('studentdisplay', display_level::NONE);
+
+        $this->setUser($this->teacher);
+
+        $output = $this->plugin()->view_header();
+
+        $this->assertStringContainsString('Students on this assignment see: No information', $output);
+        $this->assertStringContainsString('Your references leave the site.', $output);
     }
 
     /**

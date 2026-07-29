@@ -417,22 +417,16 @@ class assign_submission_refchecker extends assign_submission_plugin {
 
         $context = $this->assignment->get_context();
         $isteacher = $this->viewer_is_teacher();
+        $configuredlevel = display_level::sanitise((int) $this->get_config('studentdisplay'));
 
-        $configured = (string) get_config('assignsubmission_refchecker', 'studentinformation');
-        if (trim($configured) !== '') {
-            $information = format_text($configured, FORMAT_HTML, ['context' => $context]);
-        } else {
-            // The default wording is a lang string, so it arrives as plain text with paragraph
-            // breaks rather than HTML.
-            $information = format_text(
-                get_string('viewheader_default', 'assignsubmission_refchecker'),
-                FORMAT_MARKDOWN,
-                ['context' => $context],
-            );
+        // At the "No information" level students are told nothing whatsoever, so the whole header
+        // goes: the site's student information, the privacy notice and the expectation sentence
+        // alike. Teachers still get theirs, which is where the level itself is stated.
+        if (!$isteacher && display_level::shows_nothing($configuredlevel)) {
+            return '';
         }
 
-        $privacynotice = trim((string) get_config('assignsubmission_refchecker', 'privacynotice'));
-        $configuredlevel = display_level::sanitise((int) $this->get_config('studentdisplay'));
+        $privacynotice = $this->formatted_site_html('privacynotice', $context);
         // A text reference list makes File submissions unnecessary, so there is nothing to warn
         // about in that case.
         $hasfilewarning = $isteacher
@@ -440,14 +434,12 @@ class assign_submission_refchecker extends assign_submission_plugin {
             && !text_mode::shows_field($this->text_mode());
 
         return $output->render_from_template('assignsubmission_refchecker/view_header', [
-            'information' => $information,
+            'information' => $this->student_information($context),
             // Students are told what they personally will see. Teachers get the equivalent
             // statement about their students instead.
             'expectation' => $isteacher ? '' : display_level::student_expectation($configuredlevel),
             'hasprivacynotice' => $privacynotice !== '',
-            'privacynotice' => $privacynotice !== ''
-                ? format_text($privacynotice, FORMAT_HTML, ['context' => $context])
-                : '',
+            'privacynotice' => $privacynotice,
             'isteacher' => $isteacher,
             'studentlevel' => $isteacher
                 ? get_string(
@@ -461,6 +453,44 @@ class assign_submission_refchecker extends assign_submission_plugin {
                 ? get_string('nofileplugin', 'assignsubmission_refchecker')
                 : '',
         ]);
+    }
+
+    /**
+     * The explanation of what the check does, as HTML.
+     *
+     * The site's own wording when there is any, otherwise the default. The default is a lang string,
+     * so it arrives as plain text with paragraph breaks rather than as HTML.
+     *
+     * @param context $context The assignment's module context.
+     * @return string
+     */
+    protected function student_information(context $context): string {
+        $configured = $this->formatted_site_html('studentinformation', $context);
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        return format_text(
+            get_string('viewheader_default', 'assignsubmission_refchecker'),
+            FORMAT_MARKDOWN,
+            ['context' => $context],
+        );
+    }
+
+    /**
+     * One of the site's configurable HTML settings, formatted, or the empty string if it is not set.
+     *
+     * @param string $name Key in the plugin's site configuration.
+     * @param context $context The assignment's module context.
+     * @return string
+     */
+    protected function formatted_site_html(string $name, context $context): string {
+        $configured = trim((string) get_config('assignsubmission_refchecker', $name));
+        if ($configured === '') {
+            return '';
+        }
+
+        return format_text($configured, FORMAT_HTML, ['context' => $context]);
     }
 
     /**

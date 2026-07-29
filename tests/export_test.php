@@ -191,6 +191,16 @@ final class export_test extends \advanced_testcase {
     }
 
     /**
+     * A student told nothing at all may not download anything.
+     */
+    public function test_student_at_no_information_cannot_export(): void {
+        $this->set_display_level(display_level::NONE);
+        $this->setUser($this->student);
+
+        $this->assertFalse($this->can_export());
+    }
+
+    /**
      * The capability grants the full report however the assignment is configured.
      */
     public function test_teacher_can_export_at_status_only(): void {

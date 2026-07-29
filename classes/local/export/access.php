@@ -101,8 +101,8 @@ class access {
      * @return int One of the display_level constants.
      */
     protected static function level(assign $assign, assign_submission_plugin $plugin): int {
-        // An assignment predating the setting has no stored value, and get_config() returns false
-        // for it, which casts to STATUS_ONLY. That is the right default.
+        // An assignment with no stored value gets false from get_config(), which casts to NONE. The
+        // most restrictive level is the right default for a download endpoint.
         return display_level::effective_level_for(
             $assign->get_context(),
             (int) $plugin->get_config('studentdisplay'),

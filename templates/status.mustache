@@ -28,8 +28,8 @@
     * isfailed bool - whether checking failed
     * isnorefs bool - whether no reference list was found
     * norefsguidance string - advice shown when no reference list was found
-    * showcounts bool - whether to render the count badges
-    * counts array - label, count and badgeclass for each match status
+    * showcounts bool - whether to render any count badges
+    * counts array - label, count and labelclass for each badge
     * showdiagnostics bool - whether to show the error code (teachers only)
     * errorcode string - machine readable failure code
     * errormessage string - human readable failure detail
@@ -43,8 +43,8 @@
         "isfailed": false,
         "isnorefs": false,
         "norefsguidance": "",
-        "showcounts": false,
-        "counts": [],
+        "showcounts": true,
+        "counts": [{"label": "References", "count": 16, "labelclass": "total"}],
         "showdiagnostics": false,
         "errorcode": "",
         "errormessage": ""

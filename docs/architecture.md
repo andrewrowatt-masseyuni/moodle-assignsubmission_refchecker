@@ -757,18 +757,38 @@ quota to arrive at the same answer.
 
 ### 6.1 Display levels
 
-Three levels ([display_level.php](../classes/local/display_level.php)), set per assignment
+Four levels ([display_level.php](../classes/local/display_level.php)), set per assignment
 (`studentdisplay`), with a site-wide default (`defaultstudentdisplay`, shipped as **Status only**):
 
 | Level | Value | Student sees |
 |---|---|---|
-| `STATUS_ONLY` | 0 | The status line only |
-| `SUMMARY` | 1 | Status line plus aggregate counts |
-| `FULL` | 2 | Everything, including each individual reference |
+| `NONE` | 0 | Nothing at all — not even that checking is happening |
+| `STATUS_ONLY` | 1 | How many references were found, and the status line |
+| `SUMMARY` | 2 | Status line plus aggregate counts |
+| `FULL` | 3 | Everything, including each individual reference |
+
+The values are ordered, which is what the `>=` comparisons throughout the plugin rely on.
+`sanitise()` maps anything unrecognised to `NONE` rather than to a working level, so an assignment
+with no stored value — where `get_config()` returns `false`, which casts to `0` — discloses nothing.
+
+`NONE` is a suppression switch rather than just a smaller report: `view_header()` returns the empty
+string for a student at that level, so the site's student information **and the privacy notice** go
+with it (a notice explaining what happens to their references would give away the check it is meant
+to hide), and `status_summary::has_content()` refuses the status line as well. What survives is the
+student's own pasted reference list, which the setting was never about: `studentdisplay` governs how
+much of the *result* a student sees, and withholding the text they typed would leave them unable to
+check what they submitted.
+
+`STATUS_ONLY` adds the reference count to the status line — how many references were found is a fact
+about the student's own submission rather than a result of checking it. Above that level the
+dashboard states the total anyway, so the bare count is shown at exactly this one level.
 
 Anyone holding **`assignsubmission/refchecker:viewfullreport`** (teacher, editingteacher, manager by
 archetype) always gets `FULL`, whatever the assignment says. The capability is deliberately not
-granted to students — a student reaches the full report only through the per-assignment setting.
+granted to students — a student reaches the full report only through the per-assignment setting. It
+is also what makes `NONE` unambiguous in the renderers: because `effective_level_for()` resolves the
+capability first, a level of `NONE` can only belong to somebody without it, so nothing has to pass
+"is this a teacher?" alongside the level to avoid silencing one.
 
 `view()` **re-derives** the level rather than trusting that the viewer arrived via the expand
 control, because `assign::view_plugin_content()` is reachable directly by URL and checks only
@@ -784,15 +804,19 @@ configurable **privacy notice** if set, and then either:
 - for teachers, a note naming the level their *students* have, plus a warning if File submissions is
   not available on this assignment.
 
+Nothing at all for a student at `NONE`, as described in 6.1. Teachers keep their header there, which
+is where the level itself is stated.
+
 ### 6.3 Status line — `view_summary()`
 
 Rendered once per grading-table row, so it stays deliberately small. Shows the job status
-(`checking` interpolates "n of m, p%"), and at `SUMMARY` or above a row of verified / partial /
-mismatch / not-found badges. Teachers additionally see the errorcode and error message when there is
-one; students never do.
+(`checking` interpolates "n of m, p%"), at `STATUS_ONLY` the reference count on its own, and at
+`SUMMARY` or above a row of verified / partial / mismatch / not-found badges. Teachers additionally
+see the errorcode and error message when there is one; students never do.
 
 Nothing at all is shown to students for a `notapplicable` or `cancelled` job — teachers get a quiet
-note so they can tell "not configured" from "nothing to do".
+note so they can tell "not configured" from "nothing to do" — nor at the `NONE` display level, where
+`has_content()` refuses everything.
 
 To keep the grading table cheap, `job_manager::get_job()` **primes the whole assignment's jobs on
 first use** into a per-request cache; without it a 300-student assignment would issue 300 queries to
@@ -1095,8 +1119,8 @@ management page.
 | `cachettl` | 30 days | |
 | `staletimeout` | 6 h | Before the reconciler considers a job stalled |
 | `retaindays` | 0 (keep) | Blank stored reference text after this many days, keeping the result |
-| `studentinformation`, `privacynotice` | — | HTML shown on the assignment page |
-| `defaultstudentdisplay` | Status only | |
+| `studentinformation`, `privacynotice` | — | HTML shown on the assignment page, unless the assignment's display level is `NONE` |
+| `defaultstudentdisplay` | Status only | `NONE` suppresses every student-facing part of the plugin |
 | `defaultchecktiming` | On submit | |
 | `defaultrequiretext` | No | Whether new assignments start out asking for a text reference list |
 

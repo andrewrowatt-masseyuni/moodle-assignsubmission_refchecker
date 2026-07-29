@@ -250,10 +250,12 @@ $string['studentdisplay'] = 'Show students';
 $string['studentdisplay_full'] = 'Full report';
 $string['studentdisplay_help'] = 'How much of the result students see. Teachers always see the full report.
 
-* **No information** &mdash; students see only whether checking has finished.
+* **No information** &mdash; students see no information about the referencing checks. All student-facing information is suppressed.
+* **Status only** &mdash; students see the number of references discovered and the status of the checking process. No information about the results is displayed.
 * **Summary** &mdash; students also see how many references were verified, partially matched or not found.
 * **Full report** &mdash; students see the result for each individual reference.';
-$string['studentdisplay_status'] = 'No information (status only)';
+$string['studentdisplay_none'] = 'No information';
+$string['studentdisplay_status'] = 'Status only';
 $string['studentdisplay_summary'] = 'Summary';
 $string['studentinformation'] = 'Information for students';
 $string['studentinformation_help'] = 'Shown on the assignment page whenever this plugin is enabled. Leave empty to use the default wording, which explains what the check does and its limits.';
@@ -272,6 +274,6 @@ $string['viewheader_default'] = 'Your reference list will be checked automatical
 
 The check is a guide only. It can be wrong, especially for books, reports, websites and other sources that are not indexed in those databases. It is not a plagiarism check and it does not decide your grade.';
 $string['viewheader_level_full'] = 'You will see the result for each of your references once checking has finished.';
-$string['viewheader_level_status'] = 'You will see when checking has finished, but not the detailed results.';
+$string['viewheader_level_status'] = 'You will see how many references were found and when checking has finished, but not the detailed results.';
 $string['viewheader_level_summary'] = 'You will see a summary of how many of your references were verified once checking has finished.';
 $string['viewheader_teacher_level'] = 'Students on this assignment see: {$a}';

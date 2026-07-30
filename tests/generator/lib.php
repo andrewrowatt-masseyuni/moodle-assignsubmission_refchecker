@@ -145,6 +145,8 @@ class assignsubmission_refchecker_generator extends component_generator_base {
             'authorscore' => 100,
             'journalscore' => 90,
             'source' => 'crossref',
+            'sourcesconsulted' => 'crossref',
+            'sourcesunavailable' => null,
             'foundtitle' => 'A paper about things',
             'foundauthors' => json_encode(['Ann Author']),
             'foundyear' => 2020,
@@ -196,6 +198,10 @@ class assignsubmission_refchecker_generator extends component_generator_base {
                 'rawref' => "Author, A. (20{$index}0). Reference number {$index}. Journal of Things.",
                 'foundtitle' => $status === match_status::NOTFOUND ? null : "Reference number {$index}",
                 'source' => $status === match_status::NOTFOUND ? null : 'crossref',
+                // Nothing was found, so every database was asked before giving up.
+                'sourcesconsulted' => $status === match_status::NOTFOUND
+                    ? 'crossref,openalex,arxiv,dblp'
+                    : 'crossref',
                 'foundyear' => $status === match_status::NOTFOUND ? null : 2000 + $index,
                 'citations' => $status === match_status::NOTFOUND ? null : 10 * $index,
             ]);

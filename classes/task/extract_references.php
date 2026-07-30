@@ -21,6 +21,7 @@ use assignsubmission_refchecker\local\extractor;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\reference_parser;
+use assignsubmission_refchecker\local\source\chain;
 use assignsubmission_refchecker\local\text_mode;
 use assignsubmission_refchecker\local\text_submission;
 use core\task\adhoc_task;
@@ -323,7 +324,13 @@ class extract_references extends adhoc_task {
                 continue;
             }
 
-            job_manager::record_result($reference, $cached);
+            // Scored again rather than replayed. The cache saves the request, not the arithmetic,
+            // and anything that depends on what this student wrote — which is most of what is worth
+            // telling them — is deliberately not in there to replay.
+            job_manager::record_result(
+                $reference,
+                chain::rescore_cached((string) $reference->rawref, $cached),
+            );
             $hits++;
         }
 

@@ -20,6 +20,7 @@ use assignsubmission_refchecker\local\exception\permanent_exception;
 use assignsubmission_refchecker\local\exception\rate_limited_exception;
 use assignsubmission_refchecker\local\exception\service_refused_exception;
 use assignsubmission_refchecker\local\exception\transient_exception;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\source\chain;
 use assignsubmission_refchecker\local\circuit_breaker;
@@ -895,5 +896,151 @@ final class source_test extends \advanced_testcase {
         $result = chain::from_config()->check(self::reference());
 
         $this->assertTrue($result['record']['predatory']);
+    }
+
+    /**
+     * A not-found records which databases answered, so the report can say what was searched.
+     */
+    public function test_the_databases_that_answered_are_recorded(): void {
+        set_config('sources', 'crossref,openalex', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            new Response(200, [], json_encode(['message' => ['items' => []]])),
+            new Response(200, [], json_encode(['results' => []])),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame(match_status::NOTFOUND, $result['matchstatus']);
+        $this->assertSame(['crossref', 'openalex'], $result['consulted']);
+        $this->assertSame([], $result['unavailable']);
+        $this->assertFalse($result['degraded']);
+    }
+
+    /**
+     * A database that could not be asked is not counted as having searched.
+     */
+    public function test_a_failed_source_is_not_recorded_as_having_answered(): void {
+        set_config('sources', 'crossref,openalex', 'assignsubmission_refchecker');
+
+        $this->mock_responses([
+            new Response(500, [], ''),
+            new Response(200, [], json_encode(['results' => []])),
+        ]);
+
+        $result = chain::from_config()->check(self::reference());
+
+        $this->assertSame(['openalex'], $result['consulted']);
+        $this->assertSame(['crossref'], $result['unavailable']);
+    }
+
+    /**
+     * A cited year that has not happened yet is reported even though nothing was found.
+     *
+     * The one finding that survives a not-found, and the case it exists for: a reference nothing can
+     * be found for is where there is otherwise nothing to say.
+     */
+    public function test_a_future_year_is_reported_on_a_not_found(): void {
+        set_config('sources', 'crossref', 'assignsubmission_refchecker');
+
+        $this->mock_responses([new Response(200, [], json_encode(['message' => ['items' => []]]))]);
+
+        $result = chain::from_config()->check(
+            self::reference(['year' => (string) ((int) date('Y') + 6)]),
+        );
+
+        $this->assertSame(match_status::NOTFOUND, $result['matchstatus']);
+        $this->assertSame([issue::YEAR_FUTURE], array_column($result['issues'], 'code'));
+    }
+
+    /**
+     * A citation padded with a name that is on no part of the work is never verified.
+     *
+     * The author score deduction alone leaves confidence in the nineties on a title and venue this
+     * exact, and "Verified" printed above a list of people who are not on the paper is a worse
+     * report than no report.
+     */
+    public function test_an_invented_author_cannot_be_verified(): void {
+        set_config('sources', 'crossref', 'assignsubmission_refchecker');
+
+        $this->mock_responses([new Response(200, [], self::crossref_body())]);
+
+        $result = chain::from_config()->check(
+            self::reference(['authors' => 'Rowatt, A., Vaswani, A., & Shazeer, N.']),
+        );
+
+        $this->assertSame(match_status::PARTIAL, $result['matchstatus']);
+        $this->assertLessThan(match_status::THRESHOLD_VERIFIED, $result['confidence']);
+        $this->assertSame(
+            [['code' => issue::EXTRAAUTHORS, 'a' => ['names' => 'Rowatt']]],
+            $result['issues'],
+        );
+    }
+
+    /**
+     * A reference answered from the cache is scored again against the record that was stored.
+     *
+     * The issues are not in the payload to replay — the names one quotes the student's own text — so
+     * this is the only thing standing between a cache hit and a report with nothing in it.
+     */
+    public function test_rescoring_a_cached_record_re_derives_the_issues(): void {
+        $cached = [
+            'matchstatus' => match_status::VERIFIED,
+            'confidence' => 96,
+            'source' => 'crossref',
+            'record' => [
+                'title' => 'Attention Is All You Need',
+                'authors' => ['Ashish Vaswani', 'Noam Shazeer'],
+                'journal' => 'Advances in Neural Information Processing Systems',
+                'year' => 2017,
+                'doi' => '10.5555/attention',
+                'url' => 'https://doi.org/10.5555/attention',
+                'citations' => 98765,
+                'retracted' => false,
+            ],
+            'consulted' => ['crossref'],
+            'unavailable' => [],
+        ];
+
+        $clean = chain::rescore_cached(
+            'Vaswani, A., & Shazeer, N. (2017). Attention is all you need. '
+                . 'Advances in Neural Information Processing Systems.',
+            $cached,
+        );
+        $this->assertSame(match_status::VERIFIED, $clean['matchstatus']);
+        $this->assertSame('crossref', $clean['source']);
+        $this->assertSame(['crossref'], $clean['consulted']);
+        $this->assertSame([], $clean['issues']);
+
+        // The same work, cited by somebody who added a name to the author list.
+        $padded = chain::rescore_cached(
+            'Rowatt, A., Vaswani, A., & Shazeer, N. (2017). Attention is all you need. '
+                . 'Advances in Neural Information Processing Systems.',
+            $cached,
+        );
+        $this->assertSame(match_status::PARTIAL, $padded['matchstatus']);
+        $this->assertSame(
+            [['code' => issue::EXTRAAUTHORS, 'a' => ['names' => 'Rowatt']]],
+            $padded['issues'],
+        );
+    }
+
+    /**
+     * A cached not-found holds no record to score, and comes back as one.
+     */
+    public function test_rescoring_a_cached_not_found_keeps_it_not_found(): void {
+        $result = chain::rescore_cached('Nobody, N. (2019). A work that does not exist.', [
+            'matchstatus' => match_status::NOTFOUND,
+            'source' => null,
+            'record' => null,
+            'consulted' => ['crossref', 'openalex'],
+            'unavailable' => [],
+        ]);
+
+        $this->assertSame(match_status::NOTFOUND, $result['matchstatus']);
+        $this->assertNull($result['record']);
+        $this->assertSame(['crossref', 'openalex'], $result['consulted']);
+        $this->assertFalse($result['degraded']);
+        $this->assertSame([], $result['issues']);
     }
 }

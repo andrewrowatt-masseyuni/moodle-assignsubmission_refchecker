@@ -348,16 +348,40 @@ For each source in turn:
   author lists; scoring against the full list would mark a correctly cited eight-author paper at 25%
   because the student named two. A hit plus "et al." scores 100. DBLP's disambiguation digits
   (`Xiaopeng Zhang 0009`) are discarded automatically.
-- `journalscore` — plain similarity.
+- `extraauthors[]` — the names the reference gives that are on **no part** of the work found. This is
+  the mirror image of `authorscore` and the reason both exist: that measure walks the *record's*
+  authors, so it structurally cannot see a name the reference has **added**, and a citation padded
+  with somebody who was never on the paper scores a clean 100. Each one costs the author score 20.
+  Guards, because a wrong accusation of fabrication is the worst thing this check could produce:
+  it runs only above a title score of **85** (below that a disagreement means "possibly the wrong
+  paper", which confidence already says); the cited author text is split into groups as the reference
+  punctuated it, so `da Silva Meireles` is never broken up and initials are discarded in both APA and
+  Vancouver forms; a name is explained by overlapping a record author in *either* direction, or by
+  appearing in the record's title or venue; and more than **three** unexplained names reports none of
+  them, on the grounds that the parse is then the likelier explanation.
+- `journalscore` — similarity, with one name sitting whole inside the other scoring 95: venues take
+  subtitles and series names inconsistently, so *Open Innovation* against *Open innovation:
+  researching a new paradigm* is the same book.
 - `confidence` = weighted mean with **title 0.6, authors 0.3, journal 0.1**, renormalised over only
   the fields that are actually comparable, so a reference that omits the journal is not punished for
   omitting it.
-- `issues[]` — actionable discrepancies: authors disagree (`authorscore < 50`), cited year differs
-  from found year by **more than one** (a single year is normally online-first vs. issue
-  publication), or the cited DOI differs from the found DOI.
+- `issues[]` — actionable discrepancies, each a **code plus its placeholder values** rather than a
+  finished sentence (§4.5). Detected: authors disagree (`authorscore < 50`) or none of them appear at
+  all; extra authors, naming them; the cited year differs from the found year by more than one; the
+  years differ by up to two **and** one venue is a preprint server, which is named as a version
+  difference instead; a wholly different venue (`journalscore < 40`), or a preprint against its
+  published form; and a cited DOI that resolves elsewhere. A cited year later than next year is
+  reported too, and is the only finding that needs no record — which makes it the only thing that can
+  be said about a reference nothing was found for.
+  The author score is what carries the penalty; the year and venue issues do not touch it, because the
+  weighted mean has already counted those fields and stacking a penalty on top would count them twice.
 - The found journal is tested against the predatory list, and the flag is stored on the record.
 
-`confidence` is then classified: **≥ 80 verified**, **≥ 50 partial**, otherwise **mismatch**.
+`confidence` is then classified: **≥ 80 verified**, **≥ 50 partial**, otherwise **mismatch** — except
+that any extra author caps it just below the verified threshold. At a weight of 0.3 the deduction
+alone moves confidence by six points, so a perfect title and venue would still read "Verified 94%"
+directly above a list of people who are not on the paper. References-Validation reports that case as
+verified; this plugin does not, on the same grounds as the title floor above.
 
 **Early stop.** The chain returns immediately only when the result is `verified`, confidence ≥ 90,
 **and** the year agrees with what the reference claimed (±1, or either side unknown). Confidence
@@ -382,6 +406,12 @@ flaky database must not fail a submission: three services saying "not in my inde
 and a fourth being briefly unreachable does not make it untrustworthy. Nothing answering is a
 different claim — reporting "not found" then would mean saying a work does not exist on the strength
 of a search that never happened.
+
+**What the search covered.** Both the sources that answered (`consulted`) and those that could not be
+asked (`unavailable`) come back with the result and are stored on the reference row. Named, not
+counted: "nothing was found in CrossRef and OpenAlex" is a different statement from "nothing was
+found", and §6.4 turns the first into the sentence under a not-found badge. Storing `unavailable` is
+also what makes a settled degraded result distinguishable from a clean one afterwards.
 
 **Degraded results.** If the outcome is `notfound` *and* at least one source could not be consulted,
 the result is flagged `degraded`. A degraded result is **never written to the shared cache** — a
@@ -504,9 +534,33 @@ Assuming a contact email and Semantic Scholar API key **are** configured:
 ### 4.5 Recording a result
 
 `job_manager::record_result()` writes the outcome onto the reference row (match status, confidence,
-the three sub-scores, the found bibliographic record, DOI, URL, citations, retracted/predatory flags,
-issue count and issue JSON) and `cache_put()` stores it in the site-wide cache — **unless** the
-result was degraded.
+the three sub-scores, which sources answered and which could not be asked, the found bibliographic
+record, DOI, URL, citations, retracted/predatory flags, issue count and issue JSON) and `cache_put()`
+stores it in the site-wide cache — **unless** the result was degraded.
+
+**Issues are stored as codes, not sentences.** An issue row is `{"code": "extraauthors", "a":
+{"names": "Rowatt"}}`, and [issue.php](../classes/local/issue.php) words it with `get_string()` at the
+moment somebody reads it. Three reasons, all of which bit while this was prose:
+
+- Detection happens in cron, so a sentence built there is frozen in whatever language cron was
+  running in and can never afterwards be translated.
+- The report has one audience that may see operational detail and one that may not, and a code can be
+  worded differently for each.
+- The extra-author issue quotes back names taken from the submission, and a result is shared
+  site-wide through the cache once it is known. A code carries no submitted text.
+
+An unrecognised code renders as nothing rather than as raw text, and a bare string is passed through,
+so a row written by a different version of the plugin can never put something unreadable on screen.
+
+**A cache hit is scored again, not replayed.** `cache_put()` strips `issues` alongside `raw`, `rawref`
+and `query`, and `chain::rescore_cached()` re-parses the reference in front of it and re-runs
+`chain::result_from_record()` against the stored record. Required, not tidy: the privacy provider
+declares the cache table as holding no student-written text (§7.3) and nothing in it is deleted when
+somebody exercises their right to erasure, so a name lifted out of a citation and written there would
+be undeletable. Stripping it and working it out again on the way out is what keeps that declaration
+true. It is cheap — the cache exists to save the *request*, not the arithmetic — and it is also the
+more truthful answer, since the cache key normalises punctuation away and two references can share it
+while parsing differently (`Smith, J. (2020). Title.` and `Smith J 2020 Title` are the same key).
 
 `job_manager::recalculate_counters()` then recomputes the job's counters with a **single aggregate
 query** over the reference rows, rather than keeping a running tally. A retried or partially applied
@@ -726,9 +780,10 @@ share of the external requests, and it is the main reason checking stays inside 
 limits at cohort scale.
 
 - Written on every clean result; **never** on a degraded (not-found-while-a-source-was-down) one.
-- The payload is the outcome and the found record only. `raw`, `rawref` and `query` are explicitly
-  unset before storing — this table is shared across the whole site and must never become a store of
-  student-authored text.
+- The payload is the outcome and the found record only. `raw`, `rawref`, `query` **and `issues`** are
+  explicitly unset before storing — this table is shared across the whole site and must never become a
+  store of student-authored text, and one issue quotes names straight out of a citation. The issues are
+  re-derived on a hit; see §4.5.
 - TTL from `cachettl`, default **30 days**; expired rows are purged by `reconcile_jobs`.
 - `hits` counts reuse.
 
@@ -844,7 +899,17 @@ no extra queries at all.
   predatory flags, the specific issues found, the three sub-scores, and a **Google Scholar search
   link** — not-found is frequently a coverage gap rather than a fabrication, so students need
   somewhere obvious to go and check for themselves. Teachers additionally see which source answered.
-- **Diagnostics** (teachers only) — completion time, errorcode and error message.
+- **What "not found" means** — a sentence under the badge, because a bare badge leaves the reader to
+  guess between three very different things: the work does not exist, it exists but is not in the
+  databases this plugin asks, or something went wrong. A teacher is told which databases answered
+  (`match_status::notfound_detail()`); a student is not, on the same grounds as the source pill — a
+  student's report should not be where they discover which external services their submission was
+  sent to. When the search was incomplete both are told so, the teacher by name and the student in
+  general terms: a confident negative reached during an outage serves neither of them.
+- **Diagnostics** (teachers only) — completion time, errorcode and error message, and the
+  per-reference error message. That last one used to be shown to whoever could see the card, which
+  put raw internal English naming the databases in front of students; the sentence above is their
+  account of the same situation.
 - **Download** (`FULL` only) — PDF, Excel and CSV links to `export.php`. See 6.5.
 - **Re-run** (requires `mod/assign:grade`) — posts to `action.php`.
 
@@ -872,8 +937,10 @@ No new capability: adding an `:export` one would break the student-at-`FULL` cas
 whole requirement.
 
 **Formats.** CSV and Excel go through `\core\dataformat::download_data()` with rows flattened by
-[reference_rows.php](../classes/local/export/reference_rows.php) — 15 columns, plus `source` and
-`sourcefile` for teachers only. PDF is a *designed* document
+[reference_rows.php](../classes/local/export/reference_rows.php) — 14 columns, plus the check error,
+`source` and `sourcefile` for teachers only. The columns are appended rather than emitted empty: a
+student's download should not carry a column whose existence tells them the site consults named
+databases. PDF is a *designed* document
 ([pdf_report.php](../classes/local/export/pdf_report.php)) rather than the `dataformat_pdf` grid,
 which at 17 equal-width landscape columns is unreadable and clones the whole TCPDF object per cell.
 The layout is mustache rendered into `writeHTML()`, one call per reference; both templates carry a
@@ -981,17 +1048,20 @@ The unit of work: **exactly one row per `assign_submission`**, enforced by a `fo
 | Input | `rawref`, `sourcefile`, `refhash` | `rawref` is exactly what the student wrote; `refhash` is the cache key |
 | Progress | `status`, `attempts`, `timechecked` | `status` (`queued` / `checked` / `error`) **doubles as the chunking cursor**; `timechecked` is stamped on requeue too, because it is what the 120 s retry delay measures |
 | Verdict | `matchstatus`, `matchconfidence`, `titlescore`, `authorscore`, `journalscore`, `source` | |
+| Coverage | `sourcesconsulted`, `sourcesunavailable` | Comma separated machine names, only ever read back to be worded for somebody (§6.4). A non-empty `sourcesunavailable` on a not-found is what makes a settled degraded result distinguishable from a clean one |
 | Matched record | `foundtitle`, `foundauthors` (JSON array), `foundyear`, `foundjournal`, `doi`, `url`, `citations` | |
-| Flags | `retracted`, `predatory`, `numissues`, `issues` | `numissues` exists so the job counters can be aggregated in SQL without decoding JSON; `issues` is display-only and never queried |
+| Flags | `retracted`, `predatory`, `numissues`, `issues` | `numissues` exists so the job counters can be aggregated in SQL without decoding JSON; `issues` is a JSON array of `{code, a}` records, worded at display time (§4.5), display-only and never queried |
 | Reserved | `formatted` | JSON of apa / mla / iso690 / bibtex. Read by the report, but not currently written by production code (§6.4) |
-| Error | `errormessage` | |
+| Error | `errormessage` | Raw internal text, teachers only (§6.4) |
 
 **Indexes:** `jobid, sortorder` (display order), `jobid, status` (the chunking cursor), `refhash`.
 
 ### 7.3 `assignsubmission_refchecker_cache` — shared lookup cache
 
 Site-wide and **contains no student-authored text**: the key is a one-way hash and the payload is
-scrubbed of `raw` / `rawref` / `query` before storage.
+scrubbed of `raw` / `rawref` / `query` / `issues` before storage. Nothing in this table is deleted
+when somebody exercises their right to erasure, which is why that list has to be exhaustive — see
+§4.5 for why `issues` is on it and how they come back.
 
 | Column | Purpose |
 |---|---|

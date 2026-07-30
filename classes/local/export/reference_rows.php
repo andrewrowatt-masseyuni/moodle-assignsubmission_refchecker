@@ -16,6 +16,7 @@
 
 namespace assignsubmission_refchecker\local\export;
 
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\json_columns;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\source\chain;
@@ -71,12 +72,13 @@ class reference_rows {
             'retracted' => get_string('dashboard_retracted', 'assignsubmission_refchecker'),
             'predatory' => get_string('dashboard_predatory', 'assignsubmission_refchecker'),
             'issues' => get_string('report_issues', 'assignsubmission_refchecker'),
-            'errormessage' => get_string('export_col_error', 'assignsubmission_refchecker'),
         ];
 
         // Appended rather than emitted empty: a student's download should not carry a column whose
-        // existence tells them the site consults named databases.
+        // existence tells them the site consults named databases. The check error belongs with them
+        // for the same reason — it is raw internal text and it names the databases that were down.
         if ($this->isteacher) {
+            $columns['errormessage'] = get_string('export_col_error', 'assignsubmission_refchecker');
             $columns['source'] = get_string('report_source', 'assignsubmission_refchecker');
             $columns['sourcefile'] = get_string('export_col_sourcefile', 'assignsubmission_refchecker');
         }
@@ -132,11 +134,11 @@ class reference_rows {
             'citations' => $reference->citations !== null ? (int) $reference->citations : null,
             'retracted' => $this->yesno(!empty($reference->retracted)),
             'predatory' => $this->yesno(!empty($reference->predatory)),
-            'issues' => implode("\n", json_columns::decode_list($reference->issues)),
-            'errormessage' => (string) $reference->errormessage,
+            'issues' => implode("\n", issue::format_all(json_columns::decode_records($reference->issues))),
         ];
 
         if ($this->isteacher) {
+            $row['errormessage'] = (string) $reference->errormessage;
             $row['source'] = chain::display_name($reference->source);
             $row['sourcefile'] = (string) $reference->sourcefile;
         }

@@ -102,4 +102,54 @@ class match_status {
             default => 'secondary',
         };
     }
+
+    /**
+     * What "not found" actually means for one reference.
+     *
+     * A bare badge leaves the reader to guess between three very different things: the work does not
+     * exist, the work exists but is not in the databases this plugin asks, or something went wrong.
+     * Saying which databases were searched settles it.
+     *
+     * The names are given to a teacher and withheld from a student, which is the line the source pill
+     * and the export columns already draw: a student's report should not be where they discover which
+     * external services their submission was sent to.
+     *
+     * @param string[] $consulted Readable names of the databases that answered.
+     * @param bool $isteacher Whether the reader may see operational detail.
+     * @return string
+     */
+    public static function notfound_detail(array $consulted, bool $isteacher): string {
+        if ($isteacher && $consulted !== []) {
+            return get_string('notfound_detail_sources', 'assignsubmission_refchecker', (object) [
+                'sources' => implode(', ', $consulted),
+            ]);
+        }
+
+        return get_string('notfound_detail', 'assignsubmission_refchecker');
+    }
+
+    /**
+     * The qualification on a "not found" that was reached without asking everybody.
+     *
+     * Said to both audiences. A student told that nothing was found, when in truth one of the
+     * databases was unreachable at the time, is worse served by a confident sentence than by an
+     * honest one. They just do not need to know which database it was.
+     *
+     * @param string[] $unavailable Readable names of the databases that could not be consulted.
+     * @param bool $isteacher Whether the reader may see operational detail.
+     * @return string Empty when the search was complete.
+     */
+    public static function notfound_note(array $unavailable, bool $isteacher): string {
+        if ($unavailable === []) {
+            return '';
+        }
+
+        if ($isteacher) {
+            return get_string('notfound_detail_degraded', 'assignsubmission_refchecker', (object) [
+                'sources' => implode(', ', $unavailable),
+            ]);
+        }
+
+        return get_string('notfound_detail_uncertain', 'assignsubmission_refchecker');
+    }
 }

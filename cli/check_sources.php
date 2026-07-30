@@ -29,6 +29,7 @@ require_once($CFG->libdir . '/clilib.php');
 
 use assignsubmission_refchecker\local\docx_converter;
 use assignsubmission_refchecker\local\extractor;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\reference_parser;
 use assignsubmission_refchecker\local\source\chain;
 
@@ -148,6 +149,10 @@ $elapsed = round(microtime(true) - $started, 2);
 cli_writeln('  Status     : ' . $result['matchstatus']);
 cli_writeln('  Confidence : ' . $result['confidence'] . '%');
 cli_writeln('  Source     : ' . ($result['source'] ?? '-'));
+cli_writeln('  Searched   : ' . (implode(', ', $result['consulted']) ?: '-'));
+if ($result['unavailable']) {
+    cli_writeln('  Unavailable: ' . implode(', ', $result['unavailable']));
+}
 cli_writeln('  Scores     : title=' . $result['titlescore']
     . ' authors=' . var_export($result['authorscore'], true)
     . ' journal=' . var_export($result['journalscore'], true));
@@ -162,7 +167,7 @@ if ($result['record']) {
 }
 
 if ($result['issues']) {
-    cli_writeln('  Issues     : ' . implode(' | ', $result['issues']));
+    cli_writeln('  Issues     : ' . implode(' | ', issue::format_all($result['issues'])));
 }
 
 cli_writeln('  Took       : ' . $elapsed . 's');

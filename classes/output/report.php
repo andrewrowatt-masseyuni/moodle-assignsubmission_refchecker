@@ -17,6 +17,7 @@
 namespace assignsubmission_refchecker\output;
 
 use assignsubmission_refchecker\local\display_level;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\json_columns;
 use assignsubmission_refchecker\local\match_status;
@@ -235,23 +236,35 @@ class report implements renderable, templatable {
 
         foreach ($this->references as $reference) {
             $matchstatus = (string) ($reference->matchstatus ?? match_status::NOTFOUND);
-            $issues = $this->decode_list($reference->issues);
+            $issues = issue::format_all(json_columns::decode_records($reference->issues));
             $authors = $this->decode_list($reference->foundauthors);
             $formatted = $this->decode_map($reference->formatted);
+            $isnotfound = $matchstatus === match_status::NOTFOUND;
 
             $out[] = [
                 'id' => (int) $reference->id,
                 'sortorder' => (int) $reference->sortorder,
                 'rawref' => (string) $reference->rawref,
                 'sourcefile' => (string) $reference->sourcefile,
-                'haserror' => $reference->status === job_status::REF_ERROR,
-                'errormessage' => (string) $reference->errormessage,
+                // Operational text, and the plugin's rule is that those are for teachers. It is raw
+                // internal English naming the databases, so it is also the one place a student could
+                // read which services the site consults.
+                'haserror' => $this->isteacher && $reference->status === job_status::REF_ERROR,
+                'errormessage' => $this->isteacher ? (string) $reference->errormessage : '',
                 'matchstatus' => $matchstatus,
                 'matchstatuslabel' => match_status::label($matchstatus),
                 'badgeclass' => match_status::badge_class($matchstatus),
                 'hasconfidence' => $reference->matchconfidence !== null && $matchstatus !== match_status::NOTFOUND,
                 'matchconfidence' => (int) $reference->matchconfidence,
-                'isnotfound' => $matchstatus === match_status::NOTFOUND,
+                'isnotfound' => $isnotfound,
+                'notfounddetail' => $isnotfound ? match_status::notfound_detail(
+                    chain::display_name_list($reference->sourcesconsulted),
+                    $this->isteacher,
+                ) : '',
+                'notfounddetailnote' => $isnotfound ? match_status::notfound_note(
+                    chain::display_name_list($reference->sourcesunavailable),
+                    $this->isteacher,
+                ) : '',
                 'foundtitle' => (string) $reference->foundtitle,
                 'hasfoundtitle' => !empty($reference->foundtitle),
                 'foundauthors' => implode(', ', $authors),

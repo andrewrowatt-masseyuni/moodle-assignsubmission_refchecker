@@ -45,10 +45,11 @@
     * retractedwarning string - the retraction warning
     * predatory bool - whether the journal is possibly predatory
     * predatorywarning string - the predatory journal warning
-    * haserror bool - whether this reference failed to check
-    * errormessage string - why it failed
+    * haserror bool - whether this reference failed to check (teachers only)
+    * errormessage string - why it failed (teachers only)
     * hasdetails bool - whether anything was matched
     * details array - the matched metadata, as label and value pairs
+    * notfounddetail string - what "not found" means here, empty unless nothing was matched
     * hasissues bool - whether any issues were reported
     * issueslabel string - the heading for the issues list
     * issues array - the issue strings
@@ -73,6 +74,7 @@
             {"label": "Title", "value": "Learning at scale"},
             {"label": "Year", "value": "2019"}
         ],
+        "notfounddetail": "",
         "hasissues": false,
         "issueslabel": "Issues",
         "issues": []
@@ -120,6 +122,10 @@
         {{/details}}
     </table>
 {{/hasdetails}}
+
+{{#notfounddetail}}
+    <p style="color: #5c636a; font-size: 9pt;">{{notfounddetail}}</p>
+{{/notfounddetail}}
 
 {{#hasissues}}
     <p style="font-size: 9pt; font-weight: bold;">{{issueslabel}}</p>

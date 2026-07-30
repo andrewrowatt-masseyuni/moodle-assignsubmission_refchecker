@@ -54,7 +54,8 @@ class backup_assignsubmission_refchecker_subplugin extends backup_subplugin {
         $reference = new backup_nested_element('reference', ['id'], [
             'sortorder', 'rawref', 'sourcefile', 'refhash', 'status', 'attempts',
             'matchstatus', 'matchconfidence', 'titlescore', 'authorscore', 'journalscore',
-            'source', 'foundtitle', 'foundauthors', 'foundyear', 'foundjournal', 'doi', 'url',
+            'source', 'sourcesconsulted', 'sourcesunavailable',
+            'foundtitle', 'foundauthors', 'foundyear', 'foundjournal', 'doi', 'url',
             'citations', 'retracted', 'predatory', 'numissues', 'issues', 'timechecked',
         ]);
 

@@ -22,6 +22,7 @@ use assignsubmission_refchecker\local\export\access;
 use assignsubmission_refchecker\local\export\naming;
 use assignsubmission_refchecker\local\export\pdf_report;
 use assignsubmission_refchecker\local\export\reference_rows;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\text_submission;
@@ -327,6 +328,26 @@ final class export_test extends \advanced_testcase {
     }
 
     /**
+     * Why a reference could not be checked is teacher data too.
+     *
+     * It is raw internal text and it names the databases that were unreachable, so it belongs with
+     * the source columns rather than in a student's download.
+     */
+    public function test_the_check_error_column_is_teacher_only(): void {
+        $references = job_manager::get_references((int) $this->seed_job()->id);
+
+        $teacherrows = new reference_rows($references, true);
+        $this->assertArrayHasKey('errormessage', $teacherrows->columns());
+
+        $studentrows = new reference_rows($references, false);
+        $this->assertArrayNotHasKey('errormessage', $studentrows->columns());
+
+        foreach ($studentrows->rows() as $row) {
+            $this->assertArrayNotHasKey('errormessage', $row);
+        }
+    }
+
+    /**
      * Flags read as words. A boolean would reach the spreadsheet as TRUE or FALSE.
      */
     public function test_booleans_render_as_yes_and_no(): void {
@@ -415,14 +436,56 @@ final class export_test extends \advanced_testcase {
         ]);
         $generator->create_reference($job, [
             'foundauthors' => json_encode(['Ann Author', 'Bo Boffin']),
-            'issues' => json_encode(['Year differs', 'Journal differs']),
+            'issues' => json_encode([
+                issue::make(issue::EXTRAAUTHORS, ['names' => 'Rowatt']),
+                issue::make(issue::DOI),
+            ]),
         ]);
 
         $rows = new reference_rows(job_manager::get_references((int) $job->id), false);
         $row = iterator_to_array($rows->rows(), false)[0];
 
         $this->assertSame('Ann Author; Bo Boffin', $row['foundauthors']);
-        $this->assertSame("Year differs\nJournal differs", $row['issues']);
+        // Worded here rather than when the check ran, so the download is in the reader's language.
+        $this->assertSame(
+            issue::format(issue::make(issue::EXTRAAUTHORS, ['names' => 'Rowatt']))
+                . "\n" . issue::format(issue::make(issue::DOI)),
+            $row['issues'],
+        );
+        $this->assertStringContainsString('Rowatt', $row['issues']);
+    }
+
+    /**
+     * The downloaded report explains a not-found on the same terms as the screen does.
+     */
+    public function test_pdf_explains_a_not_found(): void {
+        $job = $this->seed_job([match_status::NOTFOUND]);
+        $references = job_manager::get_references((int) $job->id);
+        $reference = reset($references);
+
+        $forteacher = new pdf_report($this->assign, $this->submission, $job, $references, true);
+        $this->assertStringContainsString(
+            'No matching record was found in CrossRef, OpenAlex, arXiv, DBLP.',
+            $forteacher->reference_context($reference)['notfounddetail'],
+        );
+
+        $forstudent = new pdf_report($this->assign, $this->submission, $job, $references, false);
+        $studentdetail = $forstudent->reference_context($reference)['notfounddetail'];
+        $this->assertStringContainsString('any of the reference databases', $studentdetail);
+        $this->assertStringNotContainsString('CrossRef', $studentdetail);
+    }
+
+    /**
+     * A reference that was matched carries no not-found explanation at all.
+     */
+    public function test_pdf_omits_the_not_found_explanation_for_a_match(): void {
+        $job = $this->seed_job([match_status::VERIFIED]);
+        $references = job_manager::get_references((int) $job->id);
+
+        $context = (new pdf_report($this->assign, $this->submission, $job, $references, true))
+            ->reference_context(reset($references));
+
+        $this->assertSame('', $context['notfounddetail']);
     }
 
     /**

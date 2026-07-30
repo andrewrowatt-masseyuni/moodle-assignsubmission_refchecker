@@ -17,6 +17,7 @@
 namespace assignsubmission_refchecker\local\export;
 
 use assign;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\json_columns;
 use assignsubmission_refchecker\local\match_status;
@@ -278,9 +279,19 @@ class pdf_report {
      */
     public function reference_context(stdClass $reference): array {
         $matchstatus = (string) ($reference->matchstatus ?? match_status::NOTFOUND);
-        $issues = json_columns::decode_list($reference->issues);
-        $hasconfidence = $reference->matchconfidence !== null && $matchstatus !== match_status::NOTFOUND;
+        $issues = issue::format_all(json_columns::decode_records($reference->issues));
+        $isnotfound = $matchstatus === match_status::NOTFOUND;
+        $hasconfidence = $reference->matchconfidence !== null && !$isnotfound;
         $details = $this->reference_details($reference);
+        $notfounddetail = $isnotfound
+            ? trim(match_status::notfound_detail(
+                chain::display_name_list($reference->sourcesconsulted),
+                $this->isteacher,
+            ) . ' ' . match_status::notfound_note(
+                chain::display_name_list($reference->sourcesunavailable),
+                $this->isteacher,
+            ))
+            : '';
 
         return [
             'heading' => get_string(
@@ -298,10 +309,12 @@ class pdf_report {
             'retractedwarning' => get_string('report_retracted_warning', 'assignsubmission_refchecker'),
             'predatory' => !empty($reference->predatory),
             'predatorywarning' => get_string('report_predatory_warning', 'assignsubmission_refchecker'),
-            'haserror' => $reference->status === job_status::REF_ERROR,
-            'errormessage' => (string) $reference->errormessage,
+            // Operational text, so teachers only, on the same terms as the source row below.
+            'haserror' => $this->isteacher && $reference->status === job_status::REF_ERROR,
+            'errormessage' => $this->isteacher ? (string) $reference->errormessage : '',
             'hasdetails' => !empty($details),
             'details' => $details,
+            'notfounddetail' => $notfounddetail,
             'hasissues' => !empty($issues),
             'issueslabel' => get_string('report_issues', 'assignsubmission_refchecker'),
             'issues' => $issues,

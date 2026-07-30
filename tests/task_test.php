@@ -17,7 +17,9 @@
 namespace assignsubmission_refchecker;
 
 use assign;
+use assignsubmission_refchecker\local\circuit_breaker;
 use assignsubmission_refchecker\local\exception\transient_exception;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
 use assignsubmission_refchecker\local\match_status;
@@ -854,6 +856,128 @@ final class task_test extends \advanced_testcase {
         $this->run_task($this->task(check_references::class, $job));
 
         $this->assertSame(0, $DB->count_records(job_manager::TABLE_CACHE));
+    }
+
+    /**
+     * The shared cache never holds an issue, because one of them quotes the student's own text.
+     *
+     * The privacy provider declares this table as carrying no student written text, and nothing in it
+     * is deleted when somebody asks for their data to be removed. A name lifted out of a citation and
+     * written here would be undeletable, so it is stripped on the way in and worked out again on the
+     * way out.
+     */
+    public function test_the_cache_never_holds_an_issue(): void {
+        global $DB;
+
+        set_config('sources', 'crossref', 'assignsubmission_refchecker');
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        // CrossRef answers with the cited work, but the DOI is not the one the reference gave, so
+        // there is an issue to record.
+        $job = job_manager::load((int) $this->submission->id);
+        $this->mock_responses([new Response(200, [], json_encode(['message' => ['items' => [[
+            'DOI' => '10.5555/somewhere-else',
+            'title' => ['The study of subject number 1 in context'],
+            'author' => [['given' => 'A', 'family' => 'Author1']],
+            'container-title' => ['Journal of Things'],
+            'issued' => ['date-parts' => [[2011]]],
+        ]]]]))]);
+        $this->run_task($this->task(check_references::class, $job));
+
+        $entry = $DB->get_record(job_manager::TABLE_CACHE, []);
+        $payload = json_decode($entry->payload, true);
+        $this->assertArrayNotHasKey('issues', $payload);
+        $this->assertArrayHasKey('record', $payload);
+    }
+
+    /**
+     * A reference served from the cache still gets its issues, even though none were stored.
+     *
+     * The payload carries the record and nothing about how it compared to anybody's reference, so
+     * without scoring again a cache hit would report a discrepancy-ridden citation as clean. This
+     * pins the whole path: an entry written with no issues in it, and a reference row that ends up
+     * with one.
+     */
+    public function test_a_cache_hit_re_derives_the_issues(): void {
+        global $DB;
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+
+        // The work the reference cites, found earlier for somebody else — and published seven years
+        // before the year this reference claims.
+        $raw = 'Author1, A. (2011). The study of subject number 1 in context. Journal of Things, 1(1), 1-10.';
+        job_manager::cache_put(job_manager::reference_hash($raw), [
+            'matchstatus' => match_status::VERIFIED,
+            'confidence' => 95,
+            'source' => 'crossref',
+            'record' => [
+                'title' => 'The study of subject number 1 in context',
+                'authors' => ['A Author1'],
+                'journal' => 'Journal of Things',
+                'year' => 2004,
+                'doi' => '10.5555/cached1',
+                'url' => '',
+                'citations' => 3,
+                'retracted' => false,
+            ],
+            'consulted' => ['crossref'],
+            'unavailable' => [],
+        ]);
+
+        $entry = $DB->get_record(job_manager::TABLE_CACHE, []);
+        $this->assertArrayNotHasKey('issues', json_decode($entry->payload, true));
+
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+
+        $reference = $DB->get_record(job_manager::TABLE_REFS, ['jobid' => $job->id]);
+        $this->assertSame([], $this->history, 'A cache hit must not produce an HTTP request.');
+        $this->assertSame(1, (int) $reference->numissues);
+        $this->assertSame(
+            [['code' => issue::YEAR, 'a' => ['cited' => 2011, 'found' => 2004]]],
+            json_decode($reference->issues, true),
+        );
+        $this->assertSame('crossref', $reference->sourcesconsulted);
+    }
+
+    /**
+     * A not-found that was reached without asking everybody says so on the reference row.
+     *
+     * Until this was stored, the settled state of a search made during an outage was indistinguishable
+     * from one where every database answered and none had the work.
+     */
+    public function test_an_incomplete_search_is_recorded_against_the_reference(): void {
+        global $DB;
+
+        set_config('sources', 'crossref,dblp', 'assignsubmission_refchecker');
+
+        $this->attach_submission_file(1);
+        $job = $this->start_job();
+        $this->mock_responses([]);
+        $this->run_task($this->task(extract_references::class, $job));
+        $job = job_manager::load((int) $this->submission->id);
+
+        // CrossRef has nothing; DBLP falls over. Every attempt, until the budget runs out.
+        for ($attempt = 0; $attempt < job_manager::MAX_REFERENCE_ATTEMPTS; $attempt++) {
+            $DB->set_field(job_manager::TABLE_REFS, 'timechecked', 0, ['jobid' => $job->id]);
+            circuit_breaker::reset();
+            $this->mock_responses([
+                new Response(200, [], json_encode(['message' => ['items' => []]])),
+                new Response(500, [], ''),
+            ]);
+            $this->run_task($this->task(check_references::class, $job));
+        }
+
+        $reference = $DB->get_record(job_manager::TABLE_REFS, ['jobid' => $job->id]);
+        $this->assertSame(job_status::REF_CHECKED, $reference->status);
+        $this->assertSame(match_status::NOTFOUND, $reference->matchstatus);
+        $this->assertSame('crossref', $reference->sourcesconsulted);
+        $this->assertSame('dblp', $reference->sourcesunavailable);
     }
 
     /**

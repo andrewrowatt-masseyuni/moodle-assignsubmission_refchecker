@@ -17,6 +17,7 @@
 namespace assignsubmission_refchecker;
 
 use assign;
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\match_status;
 use assignsubmission_refchecker\local\text_mode;
@@ -83,11 +84,18 @@ final class backup_restore_test extends \advanced_testcase {
             'notfoundrefs' => 1,
             'sectionheading' => 'Bibliography',
         ]);
-        $generator->create_reference($job, ['sortorder' => 0, 'rawref' => 'BACKUPREFERENCEONE']);
+        $generator->create_reference($job, [
+            'sortorder' => 0,
+            'rawref' => 'BACKUPREFERENCEONE',
+            'issues' => json_encode([issue::make(issue::EXTRAAUTHORS, ['names' => 'Rowatt'])]),
+            'numissues' => 1,
+        ]);
         $generator->create_reference($job, [
             'sortorder' => 1,
             'rawref' => 'BACKUPREFERENCETWO',
             'matchstatus' => match_status::NOTFOUND,
+            'sourcesconsulted' => 'crossref,openalex',
+            'sourcesunavailable' => 'dblp',
         ]);
 
         $newcourseid = $this->duplicate_course($course, $USER->id);
@@ -115,6 +123,17 @@ final class backup_restore_test extends \advanced_testcase {
 
         $rawrefs = array_values(array_map(static fn($ref) => $ref->rawref, $newrefs));
         $this->assertSame(['BACKUPREFERENCEONE', 'BACKUPREFERENCETWO'], $rawrefs);
+
+        // The findings and the account of what was searched come across too, or the restored report
+        // would show a bare status where the original explained itself.
+        [$first, $second] = array_values($newrefs);
+        $this->assertSame(
+            [issue::make(issue::EXTRAAUTHORS, ['names' => 'Rowatt'])],
+            json_decode($first->issues, true),
+        );
+        $this->assertSame(1, (int) $first->numissues);
+        $this->assertSame('crossref,openalex', $second->sourcesconsulted);
+        $this->assertSame('dblp', $second->sourcesunavailable);
 
         // The denormalised submission id on each reference must have been remapped too.
         foreach ($newrefs as $ref) {

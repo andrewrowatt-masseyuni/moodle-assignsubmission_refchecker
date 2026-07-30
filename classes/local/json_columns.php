@@ -46,6 +46,25 @@ class json_columns {
     }
 
     /**
+     * Decode a JSON list of records, tolerating null and malformed values.
+     *
+     * Separate from decode_list() because that one flattens every element to a string, which is
+     * right for a list of author names and wrong for the issue column: an issue is a code plus its
+     * placeholder values, and casting it to a string would turn it into the word "Array".
+     *
+     * @param string|null $json
+     * @return array[]
+     */
+    public static function decode_records(?string $json): array {
+        if ($json === null || $json === '') {
+            return [];
+        }
+        $decoded = json_decode($json, true);
+
+        return is_array($decoded) ? array_values(array_filter($decoded)) : [];
+    }
+
+    /**
      * Decode a JSON object column, tolerating null and malformed values.
      *
      * @param string|null $json

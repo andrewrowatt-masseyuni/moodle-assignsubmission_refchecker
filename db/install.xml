@@ -64,6 +64,8 @@
         <FIELD NAME="authorscore" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="journalscore" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="source" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="crossref, openalex or notfound."/>
+        <FIELD NAME="sourcesconsulted" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Comma separated names of the databases that answered, so a not found result can say what was searched."/>
+        <FIELD NAME="sourcesunavailable" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Comma separated names that could not be consulted. Non-empty on a not found means the search was incomplete."/>
         <FIELD NAME="foundtitle" TYPE="char" LENGTH="1333" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="foundauthors" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of author display names."/>
         <FIELD NAME="foundyear" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
@@ -74,7 +76,7 @@
         <FIELD NAME="retracted" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="predatory" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="numissues" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="How many issues were reported, so the job counters can be aggregated without parsing JSON."/>
-        <FIELD NAME="issues" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of issue strings. Display only, never queried."/>
+        <FIELD NAME="issues" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON array of issue records: a code plus its placeholder values, worded at display time. Display only, never queried."/>
         <FIELD NAME="formatted" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON object of formatted citations: apa, mla, iso690, bibtex. Display only."/>
         <FIELD NAME="errormessage" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="timechecked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>

@@ -391,6 +391,8 @@ class job_manager {
             'authorscore' => $result['authorscore'],
             'journalscore' => $result['journalscore'],
             'source' => $result['source'],
+            'sourcesconsulted' => self::source_list($result['consulted'] ?? []),
+            'sourcesunavailable' => self::source_list($result['unavailable'] ?? []),
             'foundtitle' => $record ? core_text::substr((string) $record['title'], 0, 1333) : null,
             'foundauthors' => $record ? json_encode(array_values((array) $record['authors'])) : null,
             'foundyear' => $record ? $record['year'] : null,
@@ -407,6 +409,23 @@ class job_manager {
         ];
 
         $DB->update_record(self::TABLE_REFS, $update);
+    }
+
+    /**
+     * A list of source names as it is stored against a reference.
+     *
+     * Comma separated rather than JSON: these are a handful of short machine names, they are read
+     * back only to be worded for a reader, and a column that can be understood by looking at it is
+     * worth more here than one that needs decoding.
+     *
+     * @param array $sources
+     * @return string|null Null when nothing was recorded, so the column reads as "not known" rather
+     *      than as "nothing was searched".
+     */
+    protected static function source_list(array $sources): ?string {
+        $names = array_filter(array_map('strval', $sources));
+
+        return $names ? core_text::substr(implode(',', $names), 0, 255) : null;
     }
 
     /**
@@ -587,7 +606,13 @@ class job_manager {
 
         // The payload is the outcome and the record that was found. It must never carry the
         // reference text the student wrote, because this table is shared across the whole site.
-        unset($result['raw'], $result['rawref'], $result['query']);
+        //
+        // The issues go too, and not only as a precaution: one of them quotes back the names a
+        // citation gave that were on no part of the work, which is the student's own text. The
+        // privacy provider declares this table as holding none, and nothing here is deleted when a
+        // person asks for their data to be removed, so a name written here would be undeletable.
+        // chain::rescore_cached() works the issues out again from the reference in front of it.
+        unset($result['raw'], $result['rawref'], $result['query'], $result['issues']);
 
         $entry = $DB->get_record(self::TABLE_CACHE, ['refhash' => $refhash]);
 

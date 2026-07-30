@@ -16,6 +16,7 @@
 
 namespace assignsubmission_refchecker;
 
+use assignsubmission_refchecker\local\issue;
 use assignsubmission_refchecker\local\matcher;
 
 /**
@@ -219,7 +220,121 @@ final class matcher_test extends \advanced_testcase {
         $this->assertSame([], $onedrift['issues']);
 
         $wrong = matcher::score($base + ['year' => '2011'], $found);
-        $this->assertNotEmpty($wrong['issues']);
+        $this->assertSame(
+            [['code' => issue::YEAR, 'a' => ['cited' => 2011, 'found' => 2020]]],
+            $wrong['issues'],
+        );
+    }
+
+    /**
+     * A cited year that has not happened yet is reported without needing anything to compare it to.
+     */
+    public function test_a_future_year_is_reported_with_no_record_at_all(): void {
+        $next = (int) date('Y') + 1;
+
+        // Next year is allowed: work published online in December carries the following year's date.
+        $this->assertSame([], matcher::reference_issues(['year' => (string) $next]));
+
+        $this->assertSame(
+            [['code' => issue::YEAR_FUTURE, 'a' => ['cited' => $next + 5]]],
+            matcher::reference_issues(['year' => (string) ($next + 5)]),
+        );
+        $this->assertSame([], matcher::reference_issues([]));
+    }
+
+    /**
+     * Preprint venues are recognised, and the short names in the list do not match ordinary words.
+     */
+    public function test_preprint_venues_are_recognised_on_word_boundaries(): void {
+        $this->assertTrue(matcher::is_preprint_venue('arXiv'));
+        $this->assertTrue(matcher::is_preprint_venue('arXiv [cs.CL]'));
+        $this->assertTrue(matcher::is_preprint_venue('bioRxiv'));
+        $this->assertTrue(matcher::is_preprint_venue('NBER Working Paper Series'));
+
+        // References-Validation tests these as bare substrings, which makes "hal" match both of
+        // these. Anchoring on word boundaries is the whole reason the check is written out here.
+        $this->assertFalse(matcher::is_preprint_venue('Challenges'));
+        $this->assertFalse(matcher::is_preprint_venue('Chalmers University Press'));
+        $this->assertFalse(matcher::is_preprint_venue('Nature'));
+        $this->assertFalse(matcher::is_preprint_venue(''));
+        $this->assertFalse(matcher::is_preprint_venue(null));
+    }
+
+    /**
+     * A journal version answered from a preprint server is explained, not reported as wrong.
+     */
+    public function test_a_preprint_is_a_version_difference_rather_than_an_error(): void {
+        $result = matcher::score(
+            [
+                'title' => 'Attention is all you need',
+                'authors' => 'Vaswani, A. et al.',
+                'journal' => 'Advances in Neural Information Processing Systems',
+                'year' => '2019',
+            ],
+            [
+                'title' => 'Attention Is All You Need',
+                'authors' => ['Ashish Vaswani'],
+                'journal' => 'arXiv',
+                'year' => 2017,
+            ],
+        );
+
+        $codes = array_column($result['issues'], 'code');
+        $this->assertContains(issue::YEAR_VERSION, $codes);
+        $this->assertContains(issue::JOURNAL_VERSION, $codes);
+        $this->assertNotContains(issue::YEAR, $codes);
+        $this->assertNotContains(issue::JOURNAL, $codes);
+    }
+
+    /**
+     * Two years of drift is only forgiven when a preprint explains it.
+     */
+    public function test_two_years_of_drift_without_a_preprint_is_still_wrong(): void {
+        $result = matcher::score(
+            ['title' => 'A paper', 'authors' => 'Smith, J.', 'journal' => 'Nature', 'year' => '2018'],
+            ['title' => 'A paper', 'authors' => ['Jane Smith'], 'journal' => 'Nature', 'year' => 2020],
+        );
+
+        $this->assertSame([issue::YEAR], array_column($result['issues'], 'code'));
+    }
+
+    /**
+     * A wholly different journal is reported; a subtitle or a series name is not.
+     */
+    public function test_journal_issues(): void {
+        $wrong = matcher::score(
+            ['title' => 'A paper', 'journal' => 'Journal of Things'],
+            ['title' => 'A paper', 'journal' => 'Quarterly Review of Biology'],
+        );
+        $this->assertSame(
+            [['code' => issue::JOURNAL, 'a' => [
+                'cited' => 'Journal of Things',
+                'found' => 'Quarterly Review of Biology',
+            ]]],
+            $wrong['issues'],
+        );
+
+        // One name sitting whole inside the other is the same venue typed two ways.
+        $subtitled = matcher::score(
+            ['title' => 'A paper', 'journal' => 'Open Innovation'],
+            ['title' => 'A paper', 'journal' => 'Open innovation: researching a new paradigm'],
+        );
+        $this->assertSame([], $subtitled['issues']);
+        $this->assertSame(95, $subtitled['journalscore']);
+    }
+
+    /**
+     * The right work with entirely the wrong people is said outright rather than as a percentage.
+     */
+    public function test_no_matching_authors_at_all_is_its_own_issue(): void {
+        $result = matcher::score(
+            ['title' => 'Attention is all you need', 'authors' => 'Smith, J., Brown, A.'],
+            ['title' => 'Attention is all you need', 'authors' => ['Ashish Vaswani', 'Noam Shazeer']],
+        );
+
+        $codes = array_column($result['issues'], 'code');
+        $this->assertContains(issue::AUTHORS_NONE, $codes);
+        $this->assertNotContains(issue::AUTHORS, $codes);
     }
 
     /**
@@ -240,6 +355,174 @@ final class matcher_test extends \advanced_testcase {
             ['title' => 'A paper', 'doi' => 'https://doi.org/10.5678/xyz'],
         );
 
-        $this->assertNotEmpty($result['issues']);
+        $this->assertSame([['code' => issue::DOI]], $result['issues']);
+    }
+
+    /**
+     * A citation padded with a name that is on no part of the work names that name.
+     *
+     * The case the check exists for, and the one author_similarity() cannot see: every real author is
+     * present, so it scores a clean 100 and the invented name passes unremarked.
+     */
+    public function test_a_name_that_is_not_on_the_work_is_named(): void {
+        $real = ['B. Provera', 'A. Montefusco', 'A. Canato'];
+
+        $this->assertSame(
+            100,
+            matcher::author_similarity('Rowatt, A., Provera, B., Montefusco, A., & Canato, A.', $real),
+        );
+
+        $this->assertSame(
+            ['Rowatt'],
+            matcher::extra_authors(
+                ['authors' => 'Rowatt, A., Provera, B., Montefusco, A., & Canato, A.'],
+                ['authors' => $real, 'title' => 'Silent innovation', 'journal' => 'Industry and Innovation'],
+            ),
+        );
+    }
+
+    /**
+     * Initials are not people, in either of the styles that write them.
+     */
+    public function test_initials_are_never_read_as_names(): void {
+        $this->assertSame(
+            [['rowatt' => 'Rowatt'], ['provera' => 'Provera']],
+            matcher::cited_author_parts('Rowatt, A., & Provera, B.'),
+        );
+
+        // Vancouver runs initials together and drops the punctuation: "Smith JA" is one person.
+        $this->assertSame(
+            [['smith' => 'Smith'], ['jones' => 'Jones']],
+            matcher::cited_author_parts('Smith JA, Jones B'),
+        );
+
+        // Nor are the words that join an author list together, or the suffixes attached to a name.
+        $this->assertSame(
+            [['smith' => 'Smith'], ['jones' => 'Jones']],
+            matcher::cited_author_parts('Smith, J. Jr., and Jones, B., et al.'),
+        );
+
+        // Words the reference wrote together stay together, so a compound name is one group.
+        $this->assertSame(
+            [['da' => 'da', 'silva' => 'Silva', 'meireles' => 'Meireles']],
+            matcher::cited_author_parts('da Silva Meireles, M.'),
+        );
+    }
+
+    /**
+     * A name is explained by any overlap with a record author, in either direction.
+     */
+    public function test_names_are_matched_across_author_name_orders_and_compounds(): void {
+        // Given name first, which is how every database this plugin asks returns them.
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => 'Vaswani, A., & Shazeer, N.'],
+            ['authors' => ['Ashish Vaswani', 'Noam Shazeer']],
+        ));
+
+        // A reference may shorten a compound family name to its last part, or spell it out in full.
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => 'Silva, M.'],
+            ['authors' => ['Marco da Silva Meireles']],
+        ));
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => 'da Silva Meireles, M.'],
+            ['authors' => ['Marco Silva']],
+        ));
+    }
+
+    /**
+     * A word the parser took from the title or the venue is not treated as an invented author.
+     */
+    public function test_a_misparsed_title_word_is_not_an_extra_author(): void {
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => 'Vaswani, A. Attention'],
+            [
+                'authors' => ['Ashish Vaswani'],
+                'title' => 'Attention Is All You Need',
+                'journal' => 'Neural Information Processing Systems',
+            ],
+        ));
+    }
+
+    /**
+     * With nothing to compare against, no accusation is made.
+     */
+    public function test_extra_authors_needs_both_sides(): void {
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => ''],
+            ['authors' => ['Ashish Vaswani']],
+        ));
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => 'Rowatt, A.'],
+            ['authors' => []],
+        ));
+        // A record whose only author is a single letter offers nothing to compare either.
+        $this->assertSame([], matcher::extra_authors(
+            ['authors' => 'Rowatt, A.'],
+            ['authors' => ['R']],
+        ));
+
+        // But it must not be allowed to explain away a name, since every name contains a letter.
+        $this->assertSame(['Rowatt'], matcher::extra_authors(
+            ['authors' => 'Rowatt, A.'],
+            ['authors' => ['R', 'Zed Zulu']],
+        ));
+    }
+
+    /**
+     * Past a handful of unexplained names nothing is reported, because the parse is the likelier
+     * explanation than a fabricated author list.
+     */
+    public function test_too_many_unexplained_names_reports_none_of_them(): void {
+        $reference = ['authors' => 'One, A., Two, B., Three, C., Four, D.'];
+        $record = ['authors' => ['Zed Zulu']];
+
+        $this->assertSame([], matcher::extra_authors($reference, $record));
+        $this->assertSame(
+            matcher::MAX_EXTRA_AUTHORS,
+            count(matcher::extra_authors(
+                ['authors' => 'One, A., Two, B., Three, C.'],
+                $record,
+            )),
+        );
+    }
+
+    /**
+     * An extra author costs the author score, and citing "et al." buys no immunity from it.
+     */
+    public function test_an_extra_author_is_deducted_even_from_an_et_al_citation(): void {
+        $found = ['title' => 'Attention is all you need', 'authors' => ['Ashish Vaswani', 'Noam Shazeer']];
+
+        $clean = matcher::score(['title' => 'Attention is all you need', 'authors' => 'Vaswani, A. et al.'], $found);
+        $this->assertSame(100, $clean['authorscore']);
+        $this->assertSame([], $clean['extraauthors']);
+
+        $padded = matcher::score(
+            ['title' => 'Attention is all you need', 'authors' => 'Rowatt, A., Vaswani, A. et al.'],
+            $found,
+        );
+        $this->assertSame(['Rowatt'], $padded['extraauthors']);
+        $this->assertSame(80, $padded['authorscore']);
+        $this->assertSame(
+            [['code' => issue::EXTRAAUTHORS, 'a' => ['names' => 'Rowatt']]],
+            $padded['issues'],
+        );
+    }
+
+    /**
+     * A doubtful title is a doubtful match, not evidence of a fabricated author.
+     */
+    public function test_a_weak_title_suppresses_the_extra_author_check(): void {
+        $result = matcher::score(
+            [
+                'title' => 'Attention is mostly what you need for things',
+                'authors' => 'Rowatt, A., Vaswani, A.',
+            ],
+            ['title' => 'Attention Is All You Need', 'authors' => ['Ashish Vaswani', 'Noam Shazeer']],
+        );
+
+        $this->assertLessThan(matcher::MIN_TITLE_FOR_EXTRA_AUTHORS, $result['titlescore']);
+        $this->assertSame([], $result['extraauthors']);
+        $this->assertNotContains(issue::EXTRAAUTHORS, array_column($result['issues'], 'code'));
     }
 }

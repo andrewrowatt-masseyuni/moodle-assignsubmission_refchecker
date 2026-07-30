@@ -679,6 +679,126 @@ final class locallib_test extends \advanced_testcase {
     }
 
     /**
+     * A student is told what "not found" means, without being told which databases were searched.
+     *
+     * Naming them in a student's report would make it the place they discover which external services
+     * their submission was sent to, which is the same reason the source pill is withheld.
+     */
+    public function test_a_not_found_is_explained_to_a_student_without_naming_databases(): void {
+        $this->seed_notfound_job();
+        $this->plugin()->set_config('studentdisplay', display_level::FULL);
+
+        $this->setUser($this->student);
+
+        $output = $this->plugin()->view($this->submission);
+
+        $this->assertStringContainsString(
+            'No matching record was found in any of the reference databases that were searched.',
+            $output,
+        );
+        $this->assertStringNotContainsString('CrossRef', $output);
+        $this->assertStringNotContainsString('OpenAlex', $output);
+    }
+
+    /**
+     * A teacher is told which databases answered, which is what makes the result interpretable.
+     */
+    public function test_a_not_found_names_the_databases_for_a_teacher(): void {
+        $this->seed_notfound_job();
+
+        $this->setUser($this->teacher);
+
+        $output = $this->plugin()->view($this->submission);
+
+        $this->assertStringContainsString(
+            'No matching record was found in CrossRef, OpenAlex, arXiv, DBLP.',
+            $output,
+        );
+    }
+
+    /**
+     * A search made while a database was down says so, to both audiences.
+     *
+     * Told plainly to a teacher and in general terms to a student. Reporting a confident negative
+     * reached during an outage would be worse for both of them.
+     */
+    public function test_an_incomplete_search_is_qualified_for_both_audiences(): void {
+        $this->seed_notfound_job(['sourcesconsulted' => 'crossref', 'sourcesunavailable' => 'openalex,dblp']);
+        $this->plugin()->set_config('studentdisplay', display_level::FULL);
+
+        $this->setUser($this->teacher);
+        $this->assertStringContainsString(
+            'could not be consulted, so this result is less certain than usual: OpenAlex, DBLP.',
+            $this->plugin()->view($this->submission),
+        );
+
+        $this->setUser($this->student);
+        $studentoutput = $this->plugin()->view($this->submission);
+        $this->assertStringContainsString(
+            'Not all of the reference databases could be searched this time',
+            $studentoutput,
+        );
+        $this->assertStringNotContainsString('OpenAlex', $studentoutput);
+    }
+
+    /**
+     * Why a reference could not be checked is operational detail, so a student is not shown it.
+     *
+     * It is raw internal text, and it names the databases that were unreachable. The student-facing
+     * account of an incomplete search is the qualification above.
+     */
+    public function test_a_reference_level_error_is_teachers_only(): void {
+        $message = 'Not found, but these were unavailable: crossref, openalex';
+        $this->seed_notfound_job([
+            'status' => job_status::REF_ERROR,
+            'errormessage' => $message,
+        ]);
+        $this->plugin()->set_config('studentdisplay', display_level::FULL);
+
+        $this->setUser($this->teacher);
+        $this->assertStringContainsString($message, $this->plugin()->view($this->submission));
+
+        $this->setUser($this->student);
+        $this->assertStringNotContainsString($message, $this->plugin()->view($this->submission));
+    }
+
+    /**
+     * Seed a completed check whose one reference was not found.
+     *
+     * @param array $overrides Any reference column may be overridden.
+     * @return stdClass The job.
+     */
+    private function seed_notfound_job(array $overrides = []): stdClass {
+        $generator = $this->getDataGenerator()->get_plugin_generator('assignsubmission_refchecker');
+
+        $job = $generator->create_job([
+            'assignment' => $this->assign->get_instance()->id,
+            'submission' => $this->submission->id,
+            'status' => job_status::COMPLETE,
+            'totalrefs' => 1,
+            'checkedrefs' => 1,
+            'notfoundrefs' => 1,
+        ]);
+        $generator->create_reference($job, array_merge([
+            'matchstatus' => match_status::NOTFOUND,
+            'matchconfidence' => 0,
+            'source' => null,
+            'sourcesconsulted' => 'crossref,openalex,arxiv,dblp',
+            'foundtitle' => null,
+            'foundauthors' => null,
+            'foundjournal' => null,
+            'doi' => null,
+            'citations' => null,
+            'formatted' => null,
+        ], $overrides));
+
+        job_manager::reset_caches();
+        text_submission::reset_caches();
+
+        return $job;
+    }
+
+    /**
      * The explanatory header appears when the plugin is on, and says what this viewer will see.
      */
     public function test_view_header_describes_what_the_student_will_see(): void {

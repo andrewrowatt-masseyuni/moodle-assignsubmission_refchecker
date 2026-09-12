@@ -100,6 +100,10 @@ JavaScript running in the page queries the bibliographic APIs directly.
 - **Moodle integration.** Capabilities, per-assignment display levels, privacy provider, backup and
   restore, event logging, a core status check and a CLI probe are all local additions.
 
+This section is the record of *what* was ported and *why it diverges*.
+[upstream-sync.md](upstream-sync.md) is the record of *when* the upstream project was last checked
+for new changes, and how to run that check against only what is new since.
+
 ---
 
 ## 3. Component map

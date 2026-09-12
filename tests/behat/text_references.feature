@@ -16,6 +16,10 @@ Feature: Submitting a reference list as plain text
       | user     | course | role           |
       | student1 | C1     | student        |
       | teacher1 | C1     | editingteacher |
+    # Adding this submission type needs a capability that no role holds by default.
+    And the following "role capabilities" exist:
+      | role           | assignsubmission/refchecker:configure |
+      | editingteacher | allow                                 |
     And I change the window size to "large"
 
   @javascript

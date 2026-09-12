@@ -27,6 +27,7 @@ defined('MOODLE_INTERNAL') || die();
 
 $string['cachettl'] = 'Cache lifetime';
 $string['cachettl_help'] = 'How long a looked-up reference stays cached. Students on the same course cite much the same literature, so the cache is the main reason checking stays within the external services\' rate limits.';
+$string['cannotconfigure'] = 'Reference checking is turned on for this assignment. You do not have permission to change its settings.';
 $string['check_builtinconverter'] = 'Word (.docx) files are read by the plugin\'s built-in converter.';
 $string['check_builtinconverterunavailable'] = 'The built-in document converter is enabled but cannot run on this server: it needs PHP\'s zip extension, which Moodle requires in any case. Word files will fall back to the site\'s document converter.';
 $string['check_filetypes'] = 'File types being scanned: {$a}.';
@@ -191,6 +192,7 @@ $string['rateinterval'] = 'Minimum gap between {$a} requests';
 $string['rateinterval_help'] = 'The shortest time, in milliseconds, allowed between two requests to {$a}. Requests are paced across all background tasks, so this is a site-wide limit rather than a per-task one.
 
 The defaults follow each service\'s own published guidance. Lowering them risks having the site\'s address throttled or blocked; raising them slows checking down.';
+$string['refchecker:configure'] = 'Add and configure reference checking on an assignment';
 $string['refchecker:viewfullreport'] = 'View the full reference checking report';
 $string['references'] = 'References';
 $string['references_hint'] = 'Paste in your reference list here.';

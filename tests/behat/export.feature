@@ -16,6 +16,10 @@ Feature: Downloading the reference check report
       | user     | course | role           |
       | student1 | C1     | student        |
       | teacher1 | C1     | editingteacher |
+    # Adding this submission type needs a capability that no role holds by default.
+    And the following "role capabilities" exist:
+      | role           | assignsubmission/refchecker:configure |
+      | editingteacher | allow                                 |
     And the following "activities" exist:
       | activity | course | name  | assignsubmission_file_enabled | assignsubmission_file_maxfiles | assignsubmission_file_maxsizebytes | assignsubmission_refchecker_enabled |
       | assign   | C1     | Essay | 1                             | 1                              | 1048576                            | 1                                   |

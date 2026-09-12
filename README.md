@@ -135,6 +135,16 @@ way, and each reference carries a search link so it can be checked directly.
 
 ## Capabilities
 
+- `assignsubmission/refchecker:configure` - Add Reference Checker to an assignment and change its
+  per-assignment settings. **Granted to no role by default**, so out of the box only a site
+  administrator can turn the submission type on: this is how the plugin is rolled out to a limited
+  group of staff. Assign or override it at system, course or assignment level for the people who
+  should have it. Without it the submission type does not appear in **Submission types** on the
+  assignment settings form at all, and where another user has already turned it on the settings are
+  replaced by a note saying so and are left untouched when the form is saved. The capability governs
+  the settings form only - checking, the status line and the report all behave the same for everyone
+  once an assignment has the plugin on. Note that the site-level *Enabled by default* setting
+  therefore has no effect for a user who does not hold this capability.
 - `assignsubmission/refchecker:viewfullreport` - Always see the full per-reference report, regardless
   of the assignment's student display setting. Granted to teacher, editingteacher and manager by
   archetype, and deliberately not to students.

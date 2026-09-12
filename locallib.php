@@ -50,6 +50,9 @@ use core_external\external_value;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class assign_submission_refchecker extends assign_submission_plugin {
+    /** @var string Capability required to turn this submission type on and change its settings. */
+    public const CAP_CONFIGURE = 'assignsubmission/refchecker:configure';
+
     /**
      * Get the name of the plugin.
      *
@@ -119,12 +122,45 @@ class assign_submission_refchecker extends assign_submission_plugin {
     }
 
     /**
+     * Whether this submission type may be turned on and configured on the assignment settings form.
+     *
+     * This is the whole of the rollout gate. Returning false makes mod_assign leave the plugin off
+     * the form entirely for an assignment that does not already have it on — no checkbox, no
+     * settings — so a teacher without the capability cannot add it. Where it is already on, core
+     * keeps it on with a hidden field and calls {@see get_settings()}, which is why that method has
+     * a read-only path.
+     *
+     * @return bool
+     */
+    public function is_configurable() {
+        return $this->can_configure();
+    }
+
+    /**
      * Add the per-assignment settings.
      *
      * @param MoodleQuickForm $mform
      * @return void
      */
     public function get_settings(MoodleQuickForm $mform) {
+        if (!$this->can_configure()) {
+            // Only reachable on an assignment where somebody who could configure it has already
+            // turned the plugin on: core still calls get_settings() for an enabled plugin that is
+            // not configurable. Say that the check is running rather than leaving the teacher to
+            // wonder where the report came from, and add nothing that could be edited.
+            $mform->addElement(
+                'static',
+                'assignsubmission_refchecker_readonlynotice',
+                '',
+                $this->assignment->get_renderer()->notification(
+                    get_string('cannotconfigure', 'assignsubmission_refchecker'),
+                    \core\output\notification::NOTIFY_INFO,
+                ),
+            );
+
+            return;
+        }
+
         $mform->addElement(
             'select',
             'assignsubmission_refchecker_studentdisplay',
@@ -246,21 +282,33 @@ class assign_submission_refchecker extends assign_submission_plugin {
      * @return bool
      */
     public function save_settings(stdClass $data) {
+        // Every setting falls back to setting_default() rather than to a literal, because the form
+        // does not always carry them. A teacher without assignsubmission/refchecker:configure gets
+        // the read-only form from get_settings(), and core calls this anyway to keep the plugin
+        // enabled; falling back to the site default there would silently reset the assignment's
+        // settings every time such a teacher saved the form. setting_default() returns the value
+        // already stored on an existing assignment, and the site default only for a new one — which
+        // is what the literals used to do.
         $this->set_config('studentdisplay', display_level::sanitise(
-            (int) ($data->assignsubmission_refchecker_studentdisplay ?? display_level::STATUS_ONLY),
+            (int) ($data->assignsubmission_refchecker_studentdisplay
+                ?? $this->setting_default('studentdisplay', 'defaultstudentdisplay', display_level::STATUS_ONLY)),
         ));
         $this->set_config('checktiming', check_timing::sanitise(
-            (string) ($data->assignsubmission_refchecker_checktiming ?? check_timing::SUBMIT),
+            (string) ($data->assignsubmission_refchecker_checktiming
+                ?? $this->setting_default('checktiming', 'defaultchecktiming', check_timing::SUBMIT)),
         ));
 
-        $maxreferences = (int) ($data->assignsubmission_refchecker_maxreferences ?? 0);
+        $maxreferences = (int) ($data->assignsubmission_refchecker_maxreferences
+            ?? $this->setting_default('maxreferences', 'maxreferences', 200));
         if ($maxreferences < 1) {
+            // The teacher cleared the box or typed a nonsense value.
             $maxreferences = (int) get_config('assignsubmission_refchecker', 'maxreferences') ?: 200;
         }
         $this->set_config('maxreferences', $maxreferences);
 
         $this->set_config('requiretext', text_mode::sanitise(
-            (string) ($data->assignsubmission_refchecker_requiretext ?? text_mode::NONE),
+            (string) ($data->assignsubmission_refchecker_requiretext
+                ?? $this->setting_default('requiretext', 'defaultrequiretext', text_mode::NONE)),
         ));
 
         return true;
@@ -773,6 +821,50 @@ class assign_submission_refchecker extends assign_submission_plugin {
      */
     protected function viewer_is_teacher(): bool {
         return has_capability(display_level::CAP_VIEWFULLREPORT, $this->assignment->get_context());
+    }
+
+    /**
+     * Whether the current user may add this submission type to an assignment or change its settings.
+     *
+     * The capability is granted to no archetype, so out of the box only a site administrator passes
+     * this. That is deliberate: the submission type is being rolled out to a limited group, and the
+     * capability is how they are named.
+     *
+     * The check covers the assignment settings form and nothing else. Once an assignment has the
+     * plugin on, checking, the status line and the report are unaffected by who holds this — a
+     * teacher who cannot configure the plugin still marks the work and still reads the report.
+     *
+     * @return bool
+     */
+    protected function can_configure(): bool {
+        return has_capability(self::CAP_CONFIGURE, $this->configure_context());
+    }
+
+    /**
+     * The context the configure capability is judged in.
+     *
+     * An assignment being created for the first time has no module context yet: mod_assign builds
+     * its settings form against an assign object constructed with a null context. The course the
+     * activity is being added to stands in for it, which is also the lowest context an override
+     * could have been made at before the activity existed.
+     *
+     * @return context
+     */
+    protected function configure_context(): context {
+        $context = $this->assignment->get_context();
+        if ($context) {
+            return $context;
+        }
+
+        $course = $this->assignment->get_course();
+        if ($course) {
+            return context_course::instance($course->id);
+        }
+
+        // Neither a module nor a course to judge against, which the settings form never produces.
+        // Fall back to the site rather than guessing: a holder at system level still passes and
+        // nobody else does.
+        return context_system::instance();
     }
 
     /**

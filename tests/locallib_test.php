@@ -17,6 +17,8 @@
 namespace assignsubmission_refchecker;
 
 use assign;
+use context_course;
+use assignsubmission_refchecker\local\check_timing;
 use assignsubmission_refchecker\local\display_level;
 use assignsubmission_refchecker\local\job_manager;
 use assignsubmission_refchecker\local\job_status;
@@ -943,5 +945,129 @@ final class locallib_test extends \advanced_testcase {
         $this->assertSame(['references'], array_keys($this->plugin()->get_editor_fields()));
         $this->assertSame($text, $this->plugin()->get_editor_text('references', $submissionid));
         $this->assertSame((int) FORMAT_PLAIN, $this->plugin()->get_editor_format('references', $submissionid));
+    }
+
+    /**
+     * Grant the configure capability to the editing teacher role in this course.
+     */
+    private function grant_configure_capability(): void {
+        global $DB;
+
+        $roleid = $DB->get_field('role', 'id', ['shortname' => 'editingteacher'], MUST_EXIST);
+        assign_capability(
+            \assign_submission_refchecker::CAP_CONFIGURE,
+            CAP_ALLOW,
+            $roleid,
+            context_course::instance($this->course->id)->id,
+            true,
+        );
+        accesslib_clear_all_caches_for_unit_testing();
+    }
+
+    /**
+     * The submission type is offered on the assignment settings form only to capability holders.
+     *
+     * The capability is granted to no archetype, so an editing teacher who has not been given it
+     * explicitly must not be able to add Reference Checker to an assignment. This is the whole of
+     * the limited rollout: core drops a non-configurable plugin from the form.
+     */
+    public function test_the_submission_type_is_offered_only_to_capability_holders(): void {
+        $this->setUser($this->teacher);
+        $this->assertFalse($this->plugin()->is_configurable());
+
+        $this->grant_configure_capability();
+        $this->assertTrue($this->plugin()->is_configurable());
+    }
+
+    /**
+     * A site administrator can always configure the plugin, so the site is never locked out of it.
+     */
+    public function test_an_administrator_can_configure_the_submission_type(): void {
+        $this->setAdminUser();
+
+        $this->assertTrue($this->plugin()->is_configurable());
+    }
+
+    /**
+     * Without the capability the settings form carries an explanation and nothing editable.
+     *
+     * Core still calls get_settings() for an enabled plugin that is not configurable, so the read
+     * path has to be the one that adds no editable element rather than relying on core to skip it.
+     */
+    public function test_the_settings_are_read_only_without_the_capability(): void {
+        $this->setUser($this->teacher);
+
+        $mform = $this->submission_form();
+        $this->plugin()->get_settings($mform);
+
+        $this->assertTrue($mform->elementExists('assignsubmission_refchecker_readonlynotice'));
+        $this->assertFalse($mform->elementExists('assignsubmission_refchecker_studentdisplay'));
+        $this->assertFalse($mform->elementExists('assignsubmission_refchecker_checktiming'));
+        $this->assertFalse($mform->elementExists('assignsubmission_refchecker_maxreferences'));
+        $this->assertFalse($mform->elementExists('assignsubmission_refchecker_requiretext'));
+    }
+
+    /**
+     * With the capability the full set of settings is offered.
+     */
+    public function test_the_settings_are_editable_with_the_capability(): void {
+        $this->setUser($this->teacher);
+        $this->grant_configure_capability();
+
+        $mform = $this->submission_form();
+        $this->plugin()->get_settings($mform);
+
+        $this->assertFalse($mform->elementExists('assignsubmission_refchecker_readonlynotice'));
+        $this->assertTrue($mform->elementExists('assignsubmission_refchecker_studentdisplay'));
+        $this->assertTrue($mform->elementExists('assignsubmission_refchecker_checktiming'));
+        $this->assertTrue($mform->elementExists('assignsubmission_refchecker_maxreferences'));
+        $this->assertTrue($mform->elementExists('assignsubmission_refchecker_requiretext'));
+    }
+
+    /**
+     * Saving the read-only form leaves the stored settings exactly as they were.
+     *
+     * mod_assign calls save_settings() for every enabled plugin whatever the form showed, so a
+     * teacher without the capability saving the assignment for some unrelated reason reaches this
+     * with none of the plugin's fields in the form data. Falling back to the site defaults there
+     * would quietly undo whatever the person who set the assignment up had chosen.
+     */
+    public function test_saving_without_the_capability_leaves_the_settings_alone(): void {
+        $plugin = $this->plugin();
+        $plugin->set_config('studentdisplay', display_level::FULL);
+        $plugin->set_config('checktiming', check_timing::SAVE);
+        $plugin->set_config('maxreferences', 42);
+        $plugin->set_config('requiretext', text_mode::REQUIRED);
+
+        $this->setUser($this->teacher);
+
+        // What update_plugin_instance() passes when the form offered nothing but the hidden
+        // "still enabled" field.
+        $this->assertTrue($plugin->save_settings((object) ['assignsubmission_refchecker_enabled' => 1]));
+
+        $this->assertEquals(display_level::FULL, $plugin->get_config('studentdisplay'));
+        $this->assertEquals(check_timing::SAVE, $plugin->get_config('checktiming'));
+        $this->assertEquals(42, $plugin->get_config('maxreferences'));
+        $this->assertEquals(text_mode::REQUIRED, $plugin->get_config('requiretext'));
+    }
+
+    /**
+     * A new assignment still gets the site defaults when the form carries no settings.
+     *
+     * The fallback that protects a read-only save must not change what happens on creation, which
+     * is how every assignment built by a generator gets its settings.
+     */
+    public function test_a_new_assignment_still_falls_back_to_the_site_defaults(): void {
+        set_config('defaultstudentdisplay', display_level::SUMMARY, 'assignsubmission_refchecker');
+
+        $assign = $this->create_instance($this->course, [
+            'assignsubmission_refchecker_enabled' => 1,
+        ]);
+        $plugin = $assign->get_submission_plugin_by_type('refchecker');
+
+        $this->assertEquals(display_level::SUMMARY, $plugin->get_config('studentdisplay'));
+        $this->assertEquals(check_timing::SUBMIT, $plugin->get_config('checktiming'));
+        $this->assertEquals(200, $plugin->get_config('maxreferences'));
+        $this->assertEquals(text_mode::NONE, $plugin->get_config('requiretext'));
     }
 }

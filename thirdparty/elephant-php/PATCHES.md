@@ -4,6 +4,10 @@ Upstream: <https://github.com/endless-creativity/elephant-php>, **v0.4.1**, BSD-
 Only `src/` is vendored — no `bin/`, no tests, no Composer machinery. `autoload.php` is ours
 (Moodle gives plugins no Composer autoloader), as is this file and `apply-php81-patch.php`.
 
+For *when* upstream was last checked for a newer release — and the commands to check again — see
+[../../docs/upstream-sync.md](../../docs/upstream-sync.md). This file covers the patch itself and
+the re-vendoring procedure.
+
 ## The one patch: PHP 8.2 → 8.1
 
 Upstream declares `"php": "^8.2"`. It needs 8.2 for exactly one construct: **`readonly class`**,

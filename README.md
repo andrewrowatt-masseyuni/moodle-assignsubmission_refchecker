@@ -188,6 +188,9 @@ and deliberately holds no student-authored text.
 [docs/architecture.md](docs/architecture.md) documents the pipeline, per-source behaviour, rate
 limiting and caching, the database schema, and the design rules behind the matching thresholds.
 
+[docs/upstream-sync.md](docs/upstream-sync.md) records when the upstream projects this plugin draws
+on were last reviewed, and how to review them again.
+
 ## Credits
 
 The concepts and several algorithms â€” reference-list detection and splitting, the similarity
@@ -196,7 +199,8 @@ measures, the match classification thresholds and the predatory publisher list â
 <https://github.com/zabbonat/References-Validation>. That project is a browser-based tool; this
 plugin reimplements the approach server-side for a whole cohort, with shared request pacing, caching
 and durable background jobs. See [docs/architecture.md](docs/architecture.md) section 2 for what was
-ported and what was changed.
+ported and what was changed, and [docs/upstream-sync.md](docs/upstream-sync.md) for when that
+project was last checked for changes worth porting.
 
 ## License
 

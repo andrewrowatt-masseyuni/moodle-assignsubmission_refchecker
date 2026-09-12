@@ -192,7 +192,8 @@ It is elephant-php v0.4.1 (BSD-2-Clause) mechanically rewritten from PHP 8.2 `re
 longhand by `thirdparty/elephant-php/apply-php81-patch.php`. Change the script and re-run it; it
 asserts it found 42 classes and 101 properties and exits non-zero otherwise, and
 `test_vendored_library_carries_the_php81_patch()` fails the suite on unpatched code. Full procedure
-in `thirdparty/elephant-php/PATCHES.md`.
+in `thirdparty/elephant-php/PATCHES.md`. Whether a newer upstream release exists, and when that was
+last checked, is tracked in [docs/upstream-sync.md](docs/upstream-sync.md).
 
 `readonly class` is a *parse* error before 8.2 and a parse error in an autoloaded file is fatal and
 uncatchable — which is why `docx_converter::is_available()` is checked **before** `autoload.php` is

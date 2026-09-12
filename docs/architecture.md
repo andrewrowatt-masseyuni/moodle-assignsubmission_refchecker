@@ -1196,6 +1196,41 @@ management page.
 
 Per-assignment settings: `studentdisplay`, `checktiming`, `maxreferences`, `requiretext`.
 
+### 8.1 Who may add the submission type — `assignsubmission/refchecker:configure`
+
+The plugin is meant to reach a limited group of staff first, so being installed site-wide is not the
+same as being available. **`assignsubmission/refchecker:configure`** is granted to no archetype: until
+it is assigned or overridden, only a site administrator can put Reference Checker on an assignment.
+It is declared at `CONTEXT_MODULE`, so it can be granted site-wide, per course, or on one assignment.
+
+The gate is `is_configurable()` in [locallib.php](../locallib.php), which is the one hook mod_assign
+offers here. `assign::add_plugin_settings()` drops a plugin that is neither configurable nor already
+enabled from the settings form entirely — no checkbox, no settings — which is what stops a teacher
+adding it. The checkbox is the only way in: `moodleform::get_data()` exports registered elements
+only, so a forged `assignsubmission_refchecker_enabled` post value is not read.
+
+Two consequences follow from core's behaviour and are easy to trip over:
+
+- **An assignment that already has the plugin on still calls `get_settings()`**, because core's
+  not-configurable branch keeps it enabled with a hidden field and then asks for its settings. So
+  `get_settings()` has a read-only path: a single notification saying the check is running and that
+  this user cannot change it. Rendering the real fields frozen was rejected — frozen elements are not
+  posted back, which lands in the same problem as the next point.
+- **`save_settings()` is called whatever the form showed.** Its fallbacks are therefore
+  `setting_default()` rather than literal defaults: on an existing assignment that returns the stored
+  value, so a teacher without the capability saving the assignment for some unrelated reason leaves
+  the settings exactly as they were, while a new assignment — the generator path, where no plugin
+  fields are posted either — still gets the site defaults, which is what the literals used to do.
+
+The site-level `default` setting is unaffected by all this only in the sense that it still pre-checks
+the box for someone who *can* configure the plugin; for anyone else the plugin is not on the form, so
+it cannot be enabled by default either.
+
+Nothing downstream consults this capability. Once an assignment has the plugin on, extraction,
+checking, the status line, the report and the export behave identically for everyone — a teacher who
+cannot configure the plugin still marks the work and still reads the full report, which is
+[`:viewfullreport`](#61-display-levels)'s business, not this one's.
+
 ---
 
 ## 9. Design rules worth preserving
@@ -1221,3 +1256,7 @@ These recur throughout the code and are the reasoning most likely to be lost in 
 8. **Operational detail is teachers-only.** Error codes and messages never reach students.
 9. **The display level is re-derived wherever the report is rendered**, never inherited from how the
    page was reached.
+10. **Being installed is not being available.** `assignsubmission/refchecker:configure` is granted to
+    no role, and `save_settings()` falls back to what is already stored rather than to the site
+    defaults, so a user who cannot configure the plugin can neither add it nor quietly reset an
+    assignment that has it.
